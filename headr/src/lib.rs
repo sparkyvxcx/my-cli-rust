@@ -52,11 +52,13 @@ pub fn get_args() -> MyResult<Config> {
         .transpose()
         .map_err(|e| format!("illegal line count -- {}", e))?
         .unwrap();
+    // TODO: implement read `-c 1K` to print the first 1024 bytes of the file
     let bytes = matches
         .value_of("bytes")
         .map(parse_positive_int)
         .transpose()
         .map_err(|e| format!("illegal byte count -- {}", e))?;
+    // TODO: add an option for selecting characters in addition to bytes
 
     Ok(Config {
         files,
@@ -73,44 +75,27 @@ pub fn run(config: Config) -> MyResult<()> {
         match open(&filename) {
             Ok(mut file) => {
                 if multiple {
-                    println!("==> {} <==", filename);
+                    println!("{}==> {} <==", if count > 0 { "\n" } else { "" }, filename);
                 }
                 if let Some(size) = config.bytes {
-                    // TODO: implement read by bytes
                     /*
                     let reader = BufReader::with_capacity(size, file);
                     let byte_vec: Vec<u8> = reader.bytes().map(|b| b.unwrap()).collect();
                     */
                     let mut buffer: Vec<u8> = vec![0; size];
                     if let Err(_) = file.read_exact(&mut buffer) {
-                        if multiple {
-                            println!();
-                        }
                         continue;
                     }
                     // let utf8_content = String::from_utf8_lossy(&byte_vec);
                     let utf8_content = String::from_utf8_lossy(&buffer);
                     print!("{}", utf8_content);
                 } else {
-                    /*
-                    let lines = file.lines();
-                    for (line_num, line) in lines.enumerate() {
-                        println!("{}", line.unwrap());
-                        if line_num == config.lines - 1 {
-                            break;
-                        }
-                    }
-                    */
-
                     let mut reader = BufReader::new(file);
                     for _ in 0..config.lines {
                         let mut buffer = String::new();
                         reader.read_line(&mut buffer)?;
                         print!("{}", buffer);
                     }
-                }
-                if count < num_files - 1 {
-                    println!();
                 }
             }
             Err(e) => eprintln!("{}: {}", filename, e),
