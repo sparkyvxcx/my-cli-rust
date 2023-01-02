@@ -1,7 +1,5 @@
-use std::{
-    fs::File,
-    io::{self, BufRead, BufReader},
-};
+use std::fs::File;
+use std::io::{self, BufRead, BufReader, Read};
 
 use clap::{App, Arg};
 
@@ -68,10 +66,53 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("{:?} {:?} {:?}", config.files, config.lines, config.bytes);
-    for filename in config.files {
+    // println!("{:?} {:?} {:?}", config.files, config.lines, config.bytes);
+    let num_files = config.files.len();
+    let multiple = num_files > 1;
+    for (count, filename) in config.files.iter().enumerate() {
         match open(&filename) {
-            Ok(_) => println!("{}", filename),
+            Ok(mut file) => {
+                if multiple {
+                    println!("==> {} <==", filename);
+                }
+                if let Some(size) = config.bytes {
+                    // TODO: implement read by bytes
+                    /*
+                    let reader = BufReader::with_capacity(size, file);
+                    let byte_vec: Vec<u8> = reader.bytes().map(|b| b.unwrap()).collect();
+                    */
+                    let mut buffer: Vec<u8> = vec![0; size];
+                    if let Err(_) = file.read_exact(&mut buffer) {
+                        if multiple {
+                            println!();
+                        }
+                        continue;
+                    }
+                    // let utf8_content = String::from_utf8_lossy(&byte_vec);
+                    let utf8_content = String::from_utf8_lossy(&buffer);
+                    print!("{}", utf8_content);
+                } else {
+                    /*
+                    let lines = file.lines();
+                    for (line_num, line) in lines.enumerate() {
+                        println!("{}", line.unwrap());
+                        if line_num == config.lines - 1 {
+                            break;
+                        }
+                    }
+                    */
+
+                    let mut reader = BufReader::new(file);
+                    for _ in 0..config.lines {
+                        let mut buffer = String::new();
+                        reader.read_line(&mut buffer)?;
+                        print!("{}", buffer);
+                    }
+                }
+                if count < num_files - 1 {
+                    println!();
+                }
+            }
             Err(e) => eprintln!("{}: {}", filename, e),
         }
     }
@@ -79,6 +120,7 @@ pub fn run(config: Config) -> MyResult<()> {
 }
 
 fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    // return file handler here
     match filename {
         "-" => Ok(Box::new(BufReader::new(io::stdin()))),
         _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
