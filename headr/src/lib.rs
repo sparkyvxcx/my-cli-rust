@@ -52,7 +52,7 @@ pub fn get_args() -> MyResult<Config> {
         .transpose()
         .map_err(|e| format!("illegal line count -- {}", e))?
         .unwrap();
-    // TODO: implement read `-c 1K` to print the first 1024 bytes of the file
+    // TODO: implement read `-c 1K` to print the first 1024 bytes of the file, and negative number
     let bytes = matches
         .value_of("bytes")
         .map(parse_positive_int)
@@ -73,21 +73,15 @@ pub fn run(config: Config) -> MyResult<()> {
     let multiple = num_files > 1;
     for (count, filename) in config.files.iter().enumerate() {
         match open(&filename) {
-            Ok(mut file) => {
+            Ok(file) => {
                 if multiple {
                     println!("{}==> {} <==", if count > 0 { "\n" } else { "" }, filename);
                 }
                 if let Some(size) = config.bytes {
-                    /*
-                    let reader = BufReader::with_capacity(size, file);
-                    let byte_vec: Vec<u8> = reader.bytes().map(|b| b.unwrap()).collect();
-                    */
+                    let mut handle = file.take(size as u64);
                     let mut buffer: Vec<u8> = vec![0; size];
-                    if let Err(_) = file.read_exact(&mut buffer) {
-                        continue;
-                    }
-                    // let utf8_content = String::from_utf8_lossy(&byte_vec);
-                    let utf8_content = String::from_utf8_lossy(&buffer);
+                    let bytes_read = handle.read(&mut buffer)?;
+                    let utf8_content = String::from_utf8_lossy(&buffer[..bytes_read]);
                     print!("{}", utf8_content);
                 } else {
                     let mut reader = BufReader::new(file);
@@ -113,6 +107,17 @@ fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
 }
 
 fn parse_positive_int(val: &str) -> MyResult<usize> {
+    if val.contains("K") {
+        let new_val = val.replace("K", "");
+        match new_val.parse::<usize>() {
+            Ok(num) if num > 0 => {
+                let num = num * 1024;
+                // println!("K in value: {}", num);
+                return Ok(num);
+            }
+            _ => return Err(From::from(val)),
+        }
+    }
     match val.parse::<usize>() {
         Ok(num) if num > 0 => Ok(num),
         _ => Err(From::from(val)),

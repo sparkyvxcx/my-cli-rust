@@ -15,6 +15,7 @@ const ONE: &str = "./tests/inputs/one.txt";
 const TWO: &str = "./tests/inputs/two.txt";
 const THREE: &str = "./tests/inputs/three.txt";
 const TEN: &str = "./tests/inputs/ten.txt";
+const POEM: &str = "./tests/inputs/poem.txt";
 
 // --------------------------------------------------
 fn random_string() -> String {
@@ -109,11 +110,7 @@ fn run(args: &[&str], expected_file: &str) -> TestResult {
 }
 
 // --------------------------------------------------
-fn run_stdin(
-    args: &[&str],
-    input_file: &str,
-    expected_file: &str,
-) -> TestResult {
+fn run_stdin(args: &[&str], input_file: &str, expected_file: &str) -> TestResult {
     // Extra work here due to lossy UTF
     let mut file = File::open(expected_file)?;
     let mut buffer = Vec::new();
@@ -418,4 +415,9 @@ fn multiple_files_c4() -> TestResult {
         &["-c", "4", EMPTY, ONE, TWO, THREE, TEN],
         "tests/expected/all.c4.out",
     )
+}
+
+#[test]
+fn one_files_c1k() -> TestResult {
+    run(&["-c", "1K", POEM], "tests/expected/poem.c1k.out")
 }
