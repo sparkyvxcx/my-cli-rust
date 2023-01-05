@@ -10,11 +10,13 @@ pub struct Config {
     files: Vec<String>,
     lines: usize,
     bytes: Option<usize>,
+    chars: Option<usize>,
 }
 
 pub fn get_args() -> MyResult<Config> {
     let lines_help = "Prints ? number of lines of given file(s)";
     let bytes_help = "Prints ? number of bytes of given file(s)";
+    let chars_help = "Prints ? number of chars of given file(s)";
     let matches = App::new("headr")
         .version("0.1.0")
         .author("KenYoens-Clar<yclar@gmail.com>")
@@ -44,6 +46,15 @@ pub fn get_args() -> MyResult<Config> {
                 .value_name("BYTES")
                 .conflicts_with("lines"),
         )
+        .arg(
+            Arg::with_name("chars")
+                .short("a")
+                .long("chars")
+                .help(chars_help)
+                .takes_value(true)
+                .value_name("CHARS")
+                .conflicts_with_all(&["bytes", "lines"]),
+        )
         .get_matches();
     let files = matches.values_of_lossy("files").unwrap();
     let lines = matches
@@ -59,11 +70,17 @@ pub fn get_args() -> MyResult<Config> {
         .transpose()
         .map_err(|e| format!("illegal byte count -- {}", e))?;
     // TODO: add an option for selecting characters in addition to bytes
+    let chars = matches
+        .value_of("chars")
+        .map(parse_positive_int)
+        .transpose()
+        .map_err(|e| format!("illegal char count -- {}", e))?;
 
     Ok(Config {
         files,
         lines,
         bytes,
+        chars,
     })
 }
 
@@ -83,6 +100,20 @@ pub fn run(config: Config) -> MyResult<()> {
                     let bytes_read = handle.read(&mut buffer)?;
                     let utf8_content = String::from_utf8_lossy(&buffer[..bytes_read]);
                     print!("{}", utf8_content);
+                } else if let Some(size) = config.chars {
+                    let mut reader = BufReader::new(file);
+                    let mut count = 0;
+                    while count != size {
+                        let mut buffer = String::new();
+                        reader.read_line(&mut buffer)?;
+                        for c in buffer.chars() {
+                            print!("{}", c);
+                            count += 1;
+                            if count == size {
+                                break;
+                            }
+                        }
+                    }
                 } else {
                     let mut reader = BufReader::new(file);
                     for _ in 0..config.lines {
