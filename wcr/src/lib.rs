@@ -114,9 +114,9 @@ pub fn get_args() -> MyResult<Config> {
         .get_matches();
 
     let files = matches.values_of_lossy("files").unwrap();
-    let lines = matches.is_present("lines");
-    let words = matches.is_present("words");
-    let bytes = matches.is_present("bytes");
+    let mut lines = matches.is_present("lines");
+    let mut words = matches.is_present("words");
+    let mut bytes = matches.is_present("bytes");
     let chars = matches.is_present("chars");
 
     if !lines && !words && !bytes && !chars {
@@ -127,6 +127,12 @@ pub fn get_args() -> MyResult<Config> {
             bytes: true,
             chars,
         });
+    }
+
+    if [lines, words, bytes, chars].iter().all(|v| !v) {
+        lines = true;
+        words = true;
+        bytes = true;
     }
 
     Ok(Config {
