@@ -1,5 +1,7 @@
 use clap::{App, Arg};
-use std::{env::Args, error::Error};
+use std::error::Error;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -50,5 +52,50 @@ pub fn get_args() -> MyResult<Config> {
 
 pub fn run(config: Config) -> MyResult<()> {
     println!("{:?}", config);
+    let mut file = open(&config.in_file).map_err(|e| format!("{}: {}", config.in_file, e))?;
+    let mut line = String::new();
+    let mut previous = String::new();
+    let mut count = 0;
+    loop {
+        let bytes = file.read_line(&mut line)?;
+        if bytes == 0 {
+            if config.count {
+                print!("{:>4} {}", count, previous);
+            } else {
+                print!("{}", previous);
+            }
+            break;
+        }
+        /*
+        if let Some(&count) = hm.get_mut(&line) {
+            count += 1;
+        } else {
+            hm.insert(line, 1);
+        }
+        */
+        if previous == "" {
+            previous = line.clone();
+            count += 1;
+        } else if previous.trim() != line.trim() {
+            if config.count {
+                print!("{:>4} {}", count, previous);
+            } else {
+                print!("{}", previous);
+            }
+
+            previous = line.clone();
+            count = 0;
+        } else {
+            count += 1;
+        }
+        line.clear();
+    }
     Ok(())
+}
+
+fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
 }
