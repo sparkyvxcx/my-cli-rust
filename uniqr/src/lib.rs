@@ -1,11 +1,11 @@
 use clap::{App, Arg};
 use std::error::Error;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     in_file: String,
     out_file: Option<String>,
@@ -51,40 +51,26 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("{:?}", config);
+    // println!("{:?}", config);
     let mut file = open(&config.in_file).map_err(|e| format!("{}: {}", config.in_file, e))?;
+    let mut output_buffer = create(config.out_file).map_err(|e| format!("{}", e))?;
     let mut line = String::new();
-    let mut previous = String::new();
+    let mut previous = String::from("");
     let mut count = 0;
+
     loop {
         let bytes = file.read_line(&mut line)?;
         if bytes == 0 {
-            if config.count {
-                print!("{:>4} {}", count, previous);
-            } else {
-                print!("{}", previous);
-            }
+            write_output(&mut output_buffer, previous, count, config.count)?;
             break;
         }
-        /*
-        if let Some(&count) = hm.get_mut(&line) {
-            count += 1;
-        } else {
-            hm.insert(line, 1);
-        }
-        */
         if previous == "" {
             previous = line.clone();
             count += 1;
         } else if previous.trim() != line.trim() {
-            if config.count {
-                print!("{:>4} {}", count, previous);
-            } else {
-                print!("{}", previous);
-            }
-
+            write_output(&mut output_buffer, previous, count, config.count)?;
             previous = line.clone();
-            count = 0;
+            count = 1;
         } else {
             count += 1;
         }
@@ -98,4 +84,27 @@ fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
         "-" => Ok(Box::new(BufReader::new(io::stdin()))),
         _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
     }
+}
+
+fn create(out_file: Option<String>) -> MyResult<Box<dyn Write>> {
+    match out_file {
+        Some(filename) => Ok(Box::new(File::create(filename)?)),
+        None => Ok(Box::new(io::stdout())),
+    }
+}
+
+fn write_output(
+    buffer: &mut Box<dyn Write>,
+    previous: String,
+    count: usize,
+    print_count: bool,
+) -> MyResult<()> {
+    if count != 0 {
+        if print_count {
+            buffer.write_fmt(format_args!("{:>4} {}", count, previous))?;
+        } else {
+            buffer.write_fmt(format_args!("{}", previous))?;
+        }
+    }
+    Ok(())
 }
