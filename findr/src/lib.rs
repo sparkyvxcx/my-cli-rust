@@ -27,7 +27,9 @@ pub fn get_args() -> MyResult<Config> {
         .arg(
             Arg::with_name("path")
                 .value_name("PATH")
-                .help("Search paths [default: .]"),
+                .help("Search paths")
+                .default_value(".")
+                .multiple(true),
         )
         .arg(
             Arg::with_name("name")
@@ -43,22 +45,32 @@ pub fn get_args() -> MyResult<Config> {
                 .value_name("TYPE")
                 .short("t")
                 .long("type")
-                .help("Entry type [possible values: f, d, l]")
+                .help("Entry type")
                 .possible_values(&["f", "d", "l"])
                 .takes_value(true)
                 .multiple(true),
         )
         .get_matches();
 
-    let paths: Vec<String> = matches
-        .values_of_lossy("path")
-        .unwrap_or(vec![".".to_string()]);
+    let paths: Vec<String> = matches.values_of_lossy("path").unwrap();
+    /*
+    let names: Vec<Regex> = matches
+        .values_of_lossy("name")
+        .map(|vals| {
+            vals.into_iter()
+                .map(|name| Regex::new(&name).map_err(|_| format!("Invalid --name \"{}\"", name)))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    */
     let names: Vec<Regex> = matches
         .values_of_lossy("name")
         .unwrap_or(vec![])
-        .iter()
-        .map(|p| Regex::new(&p).unwrap())
-        .collect();
+        .into_iter()
+        .map(|name| Regex::new(&name).map_err(|_| format!("Invalid --name \"{}\"", name)))
+        .collect::<Result<Vec<_>, _>>()?;
+
     let entry_types = matches
         .values_of_lossy("type")
         .unwrap_or(vec![])
@@ -67,7 +79,7 @@ pub fn get_args() -> MyResult<Config> {
             "f" => File,
             "d" => Dir,
             "l" => Link,
-            _ => panic!("unexpected input error"),
+            _ => unreachable!("Invalid type"),
         })
         .collect();
 
