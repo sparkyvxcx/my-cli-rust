@@ -92,12 +92,35 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("{:?}", config);
+    // println!("{:?}", config);
 
     for path in config.paths {
         for entry in WalkDir::new(path) {
             match entry {
-                Ok(entry) => println!("{}", entry.path().display()),
+                Ok(entry) => {
+                    if !config.names.is_empty()
+                        && config
+                            .names
+                            .iter()
+                            .filter(|name| name.is_match(entry.file_name().to_str().unwrap()))
+                            .count()
+                            == 0
+                    {
+                        continue;
+                    }
+                    if config.entry_types.is_empty()
+                        || config
+                            .entry_types
+                            .iter()
+                            .any(|each_entry| match each_entry {
+                                File => entry.file_type().is_file(),
+                                Dir => entry.file_type().is_dir(),
+                                Link => entry.file_type().is_symlink(),
+                            })
+                    {
+                        println!("{}", entry.path().display());
+                    }
+                }
                 Err(e) => eprintln!("{}", e),
             }
         }
