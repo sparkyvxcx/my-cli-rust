@@ -51,6 +51,18 @@ pub fn get_args() -> MyResult<Config> {
                 .takes_value(true)
                 .multiple(true),
         )
+        .arg(
+            Arg::with_name("max_depth")
+                .value_name("MAX DEPTH")
+                .long("max_depth")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("min_depth")
+                .value_name("MIN DEPTH")
+                .long("min_depth")
+                .takes_value(true),
+        )
         .get_matches();
 
     let paths: Vec<String> = matches.values_of_lossy("path").unwrap();
