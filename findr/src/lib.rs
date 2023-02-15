@@ -18,8 +18,8 @@ pub struct Config {
     paths: Vec<String>,
     names: Vec<Regex>,
     entry_types: Vec<EntryType>,
-    max_depth: Option<usize>,
-    min_depth: Option<usize>,
+    max_depth: usize,
+    min_depth: usize,
 }
 
 pub fn get_args() -> MyResult<Config> {
@@ -57,12 +57,14 @@ pub fn get_args() -> MyResult<Config> {
             Arg::with_name("max_depth")
                 .value_name("MAX DEPTH")
                 .long("max_depth")
+                .default_value("10")
                 .takes_value(true),
         )
         .arg(
             Arg::with_name("min_depth")
                 .value_name("MIN DEPTH")
                 .long("min_depth")
+                .default_value("0")
                 .takes_value(true),
         )
         .get_matches();
@@ -98,13 +100,18 @@ pub fn get_args() -> MyResult<Config> {
         })
         .collect();
 
-    let str_to_usize = |v: &str| {
-        let v = v.to_owned();
-        Some(v.parse::<usize>().unwrap())
-    };
-
-    let max_depth = matches.value_of("max_depth").and_then(str_to_usize);
-    let min_depth = matches.value_of("min_depth").and_then(str_to_usize);
+    let max_depth = matches
+        .value_of("max_depth")
+        .unwrap()
+        .to_owned()
+        .parse::<usize>()
+        .unwrap();
+    let min_depth = matches
+        .value_of("min_depth")
+        .unwrap()
+        .to_owned()
+        .parse::<usize>()
+        .unwrap();
 
     Ok(Config {
         paths,
@@ -139,8 +146,8 @@ pub fn run(config: Config) -> MyResult<()> {
 
     for path in &config.paths {
         let entries = WalkDir::new(path)
-            .min_depth(config.min_depth.unwrap_or(0)) // follow WalkDir's default min depth value
-            .max_depth(config.max_depth.unwrap_or(10)) // follow WalkDir's default max depth value
+            .min_depth(config.min_depth) // follow WalkDir's default min depth value
+            .max_depth(config.max_depth) // follow WalkDir's default max depth value
             .into_iter()
             .filter_map(|e| match e {
                 Ok(entry) => Some(entry),
