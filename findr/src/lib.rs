@@ -18,6 +18,8 @@ pub struct Config {
     paths: Vec<String>,
     names: Vec<Regex>,
     entry_types: Vec<EntryType>,
+    max_depth: Option<usize>,
+    min_depth: Option<usize>,
 }
 
 pub fn get_args() -> MyResult<Config> {
@@ -96,16 +98,25 @@ pub fn get_args() -> MyResult<Config> {
         })
         .collect();
 
+    let str_to_usize = |v: &str| {
+        let v = v.to_owned();
+        Some(v.parse::<usize>().unwrap())
+    };
+
+    let max_depth = matches.value_of("max_depth").and_then(str_to_usize);
+    let min_depth = matches.value_of("min_depth").and_then(str_to_usize);
+
     Ok(Config {
         paths,
         names,
         entry_types,
+        max_depth,
+        min_depth,
     })
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    // println!("{:?}", config);
-    //
+    println!("{:?}", config);
     let type_filter = |entry: &DirEntry| {
         config.entry_types.is_empty()
             || config
@@ -128,6 +139,8 @@ pub fn run(config: Config) -> MyResult<()> {
 
     for path in &config.paths {
         let entries = WalkDir::new(path)
+            .min_depth(config.min_depth.unwrap_or(0)) // follow WalkDir's default min depth value
+            .max_depth(config.max_depth.unwrap_or(10)) // follow WalkDir's default max depth value
             .into_iter()
             .filter_map(|e| match e {
                 Ok(entry) => Some(entry),
