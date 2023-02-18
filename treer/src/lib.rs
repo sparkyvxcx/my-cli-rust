@@ -5,7 +5,7 @@ type MyResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 pub struct Config {
     path: String,
-    depth: usize,
+    level: Option<usize>,
 }
 
 pub fn get_args() -> MyResult<Config> {
@@ -30,7 +30,13 @@ pub fn get_args() -> MyResult<Config> {
         .get_matches();
 
     let path = matches.value_of("path").unwrap().to_string();
-    Ok(Config { path, depth: 6 })
+    let level = match matches.value_of("level") {
+        Some(v) => Some(v.to_string().parse::<usize>()),
+        None => None,
+    }
+    .transpose()
+    .unwrap();
+    Ok(Config { path, level })
 }
 
 pub fn run(config: Config) -> MyResult<()> {
