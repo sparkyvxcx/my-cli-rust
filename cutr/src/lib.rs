@@ -1,6 +1,8 @@
 use crate::Extract::*;
 use clap::{App, Arg};
-use std::{error::Error, fmt::format, ops::Range};
+use regex::Regex;
+use std::num::NonZeroUsize;
+use std::ops::Range;
 
 type MyResult<T> = Result<T, Box<dyn std::error::Error>>;
 type PositionList = Vec<Range<usize>>;
@@ -21,61 +23,61 @@ pub struct Config {
 
 pub fn get_args() -> MyResult<Config> {
     let matches = App::new("cutr")
-        .version("0.0.1")
+        .version("0.1.0")
         .author("Ken Youens-Clark <kyclark@gmail.com>")
         .about("Rusty cut")
         .arg(
             Arg::with_name("files")
-                .multiple(true)
+                .value_name("FILE")
                 .help("Input file(s)")
+                .multiple(true)
                 .default_value("-"),
         )
         .arg(
             Arg::with_name("delimiter")
-                .short("d")
-                .long("delim")
                 .value_name("DELIMITER")
                 .help("Field delimiter")
+                .short("d")
+                .long("delim")
                 .default_value("\t"),
         )
         .arg(
             Arg::with_name("fields")
+                .value_name("FIELDS")
+                .help("Selected fields")
                 .short("f")
                 .long("field")
-                .value_name("FIELDS")
-                .use_delimiter(true)
-                .conflicts_with_all(&["bytes", "chars"])
-                .help("Selected fields"),
+                .conflicts_with_all(&["bytes", "chars"]),
         )
         .arg(
             Arg::with_name("bytes")
+                .value_name("BYTES")
+                .help("Selected bytes")
                 .short("b")
                 .long("bytes")
-                .value_name("BYTES")
-                .use_delimiter(true)
-                .conflicts_with_all(&["chars", "fields"])
-                .help("Selected bytes"),
+                .conflicts_with_all(&["chars", "fields"]),
         )
         .arg(
             Arg::with_name("chars")
+                .value_name("CHARS")
+                .help("Selected characters")
                 .short("c")
                 .long("chars")
-                .value_name("CHARS")
-                .use_delimiter(true)
-                .conflicts_with_all(&["bytes", "fields"])
-                .help("Selected characters"),
+                .conflicts_with_all(&["bytes", "fields"]),
         )
         .get_matches();
-    let files = matches.values_of_lossy("files").unwrap();
+
     let delimiter = matches.value_of("delimiter").unwrap();
-    let delimiter = if delimiter.len() != 1 {
+    let delimiter_bytes = delimiter.as_bytes();
+    let delimiter = if delimiter_bytes.len() != 1 {
         return Err(From::from(format!(
             "--delim \"{}\" must be a single byte",
             delimiter.to_string(),
         )));
     } else {
-        delimiter.as_bytes().to_owned()[0]
+        *delimiter_bytes.first().unwrap()
     };
+
     let extract = if matches.is_present("bytes") {
         let cut_ranges = matches.value_of("bytes").unwrap();
         Bytes(parse_pos(cut_ranges)?)
@@ -90,7 +92,7 @@ pub fn get_args() -> MyResult<Config> {
     };
 
     Ok(Config {
-        files,
+        files: matches.values_of_lossy("files").unwrap(),
         delimiter,
         extract,
     })
@@ -101,7 +103,7 @@ pub fn run(config: Config) -> MyResult<()> {
     Ok(())
 }
 
-fn parse_pos(range: &str) -> MyResult<PositionList> {
+fn parse_pos_mine(range: &str) -> MyResult<PositionList> {
     let mut position_lists = vec![];
     for range in range.split(",") {
         let mut start = 0;
@@ -137,6 +139,45 @@ fn parse_pos(range: &str) -> MyResult<PositionList> {
     }
 
     Ok(position_lists)
+}
+
+fn parse_pos(range: &str) -> MyResult<PositionList> {
+    let range_re = Regex::new(r"^(\d+)-(\d+)$").unwrap();
+
+    range
+        .split(',')
+        .into_iter()
+        .map(|val| {
+            parse_index(val).map(|n| n..n + 1).or_else(|e| {
+                range_re.captures(val).ok_or(e).and_then(|captures| {
+                    let n1 = parse_index(&captures[1])?;
+                    let n2 = parse_index(&captures[2])?;
+                    if n1 >= n2 {
+                        return Err(format!(
+                            "First number in range ({}) must be lower than second number ({})",
+                            n1 + 1,
+                            n2 + 1
+                        ));
+                    }
+                    Ok(n1..n2 + 1)
+                })
+            })
+        })
+        .collect::<Result<_, _>>()
+        .map_err(From::from)
+}
+
+fn parse_index(input: &str) -> Result<usize, String> {
+    let value_error = || format!("illegal list value: \"{}\"", input);
+    input
+        .starts_with('+')
+        .then(|| Err(value_error()))
+        .unwrap_or_else(|| {
+            input
+                .parse::<NonZeroUsize>()
+                .map(|n| usize::from(n) - 1)
+                .map_err(|_| value_error())
+        })
 }
 
 #[cfg(test)]
