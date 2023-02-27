@@ -1,6 +1,8 @@
 use crate::Extract::*;
 use clap::{App, Arg};
 use regex::Regex;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 use std::num::NonZeroUsize;
 use std::ops::Range;
 
@@ -100,14 +102,57 @@ pub fn get_args() -> MyResult<Config> {
 
 pub fn run(config: Config) -> MyResult<()> {
     println!("{:#?}", config);
+    for filename in &config.files {
+        match open(filename) {
+            Ok(_) => println!("Opened {}", filename),
+            Err(err) => eprintln!("{}: {}", filename, err),
+        }
+    }
     Ok(())
 }
 
+fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
+}
+
+fn extract_chars(line: &str, char_pos: &[Range<usize>]) -> String {
+    char_pos
+        .iter()
+        .map(|pos| {
+            let mut x = String::new();
+            for (i, c) in line.chars().enumerate() {
+                if pos.contains(&i) {
+                    x.push(c);
+                }
+            }
+            x
+        })
+        .collect::<String>()
+}
+
+fn extract_bytes(line: &str, char_pos: &[Range<usize>]) -> String {
+    let mut buf = vec![];
+    char_pos.iter().for_each(|pos| {
+        for (i, c) in line.bytes().enumerate() {
+            if pos.contains(&i) {
+                buf.push(c);
+            }
+        }
+    });
+    String::from_utf8_lossy(&buf[..]).into_owned()
+}
+
+#[warn(deprecated)]
 fn parse_pos_mine(range: &str) -> MyResult<PositionList> {
     let mut position_lists = vec![];
     for range in range.split(",") {
         let mut start = 0;
         let mut end = 0;
+
+        println!("{} {}", start, end);
 
         let bound: Vec<&str> = range.split("-").collect();
         if bound.len() == 2 {
@@ -182,6 +227,8 @@ fn parse_index(input: &str) -> Result<usize, String> {
 
 #[cfg(test)]
 mod unit_tests {
+    use super::extract_bytes;
+    use super::extract_chars;
     use super::parse_pos;
 
     #[test]
@@ -290,5 +337,24 @@ mod unit_tests {
         let res = parse_pos("15,19-20");
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), vec![14..15, 18..20]);
+    }
+
+    #[test]
+    fn test_extract_chars() {
+        assert_eq!(extract_chars("", &[0..1]), "".to_string());
+        assert_eq!(extract_chars("ábc", &[0..1]), "á".to_string());
+        assert_eq!(extract_chars("ábc", &[0..1, 2..3]), "ác".to_string());
+        assert_eq!(extract_chars("ábc", &[0..3]), "ábc".to_string());
+        assert_eq!(extract_chars("ábc", &[2..3, 1..2]), "cb".to_string());
+        assert_eq!(extract_chars("ábc", &[0..1, 1..2, 4..5]), "áb".to_string());
+    }
+
+    #[test]
+    fn test_extract_bytes() {
+        assert_eq!(extract_bytes("ábc", &[0..1]), "�".to_string());
+        assert_eq!(extract_bytes("ábc", &[0..2]), "á".to_string());
+        assert_eq!(extract_bytes("ábc", &[0..3]), "áb".to_string());
+        assert_eq!(extract_bytes("ábc", &[0..4]), "ábc".to_string());
+        assert_eq!(extract_bytes("ábc", &[3..4, 2..3]), "cb".to_string());
     }
 }
