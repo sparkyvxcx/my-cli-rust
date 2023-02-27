@@ -104,7 +104,24 @@ pub fn run(config: Config) -> MyResult<()> {
     println!("{:#?}", config);
     for filename in &config.files {
         match open(filename) {
-            Ok(_) => println!("Opened {}", filename),
+            Ok(buf) => {
+                println!("Opened {}", filename);
+                match &config.extract {
+                    Bytes(byte_pos) => {
+                        for line in buf.lines() {
+                            let line = line.unwrap();
+                            println!("{}", extract_bytes(&line, &byte_pos))
+                        }
+                    }
+                    Chars(char_pos) => {
+                        for line in buf.lines() {
+                            let line = line.unwrap();
+                            println!("{}", extract_bytes(&line, &char_pos))
+                        }
+                    }
+                    Fields(_) => todo!(),
+                }
+            }
             Err(err) => eprintln!("{}: {}", filename, err),
         }
     }
@@ -133,9 +150,9 @@ fn extract_chars(line: &str, char_pos: &[Range<usize>]) -> String {
         .collect::<String>()
 }
 
-fn extract_bytes(line: &str, char_pos: &[Range<usize>]) -> String {
+fn extract_bytes(line: &str, byte_pos: &[Range<usize>]) -> String {
     let mut buf = vec![];
-    char_pos.iter().for_each(|pos| {
+    byte_pos.iter().for_each(|pos| {
         for (i, c) in line.bytes().enumerate() {
             if pos.contains(&i) {
                 buf.push(c);
