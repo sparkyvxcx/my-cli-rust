@@ -116,7 +116,7 @@ pub fn run(config: Config) -> MyResult<()> {
                     Chars(char_pos) => {
                         for line in buf.lines() {
                             let line = line.unwrap();
-                            println!("{}", extract_bytes(&line, &char_pos))
+                            println!("{}", extract_chars(&line, &char_pos))
                         }
                     }
                     Fields(_) => todo!(),
