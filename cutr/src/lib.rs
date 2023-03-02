@@ -1,6 +1,6 @@
 use crate::Extract::*;
 use clap::{App, Arg};
-use csv::StringRecord;
+use csv::{Reader, ReaderBuilder, StringRecord};
 use regex::Regex;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -102,11 +102,11 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("{:#?}", config);
+    // println!("{:#?}", config);
     for filename in &config.files {
         match open(filename) {
             Ok(buf) => {
-                println!("Opened {}", filename);
+                // println!("Opened {}", filename);
                 match &config.extract {
                     Bytes(byte_pos) => {
                         for line in buf.lines() {
@@ -120,7 +120,23 @@ pub fn run(config: Config) -> MyResult<()> {
                             println!("{}", extract_chars(&line, &char_pos))
                         }
                     }
-                    Fields(_) => todo!(),
+                    Fields(field_pos) => {
+                        let mut reader = ReaderBuilder::new()
+                            .delimiter(config.delimiter)
+                            .from_reader(buf);
+                        println!(
+                            "{}",
+                            extract_fields(reader.headers()?, field_pos)
+                                .join(&(config.delimiter as char).to_string())
+                        );
+                        for record in reader.records() {
+                            println!(
+                                "{}",
+                                extract_fields(&record?, field_pos)
+                                    .join(&(config.delimiter as char).to_string())
+                            );
+                        }
+                    }
                 }
             }
             Err(err) => eprintln!("{}: {}", filename, err),
