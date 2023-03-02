@@ -1,5 +1,6 @@
 use crate::Extract::*;
 use clap::{App, Arg};
+use csv::StringRecord;
 use regex::Regex;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -162,6 +163,18 @@ fn extract_bytes(line: &str, byte_pos: &[Range<usize>]) -> String {
     String::from_utf8_lossy(&buf[..]).into_owned()
 }
 
+fn extract_fields(record: &StringRecord, field_pos: &[Range<usize>]) -> Vec<String> {
+    let mut results = vec![];
+    field_pos.iter().for_each(|pos| {
+        for (i, c) in record.into_iter().enumerate() {
+            if pos.contains(&i) {
+                results.push(c.to_string());
+            }
+        }
+    });
+    results
+}
+
 #[warn(deprecated)]
 fn parse_pos_mine(range: &str) -> MyResult<PositionList> {
     let mut position_lists = vec![];
@@ -246,7 +259,9 @@ fn parse_index(input: &str) -> Result<usize, String> {
 mod unit_tests {
     use super::extract_bytes;
     use super::extract_chars;
+    use super::extract_fields;
     use super::parse_pos;
+    use csv::StringRecord;
 
     #[test]
     fn test_parse_pos() {
@@ -373,5 +388,15 @@ mod unit_tests {
         assert_eq!(extract_bytes("ábc", &[0..3]), "áb".to_string());
         assert_eq!(extract_bytes("ábc", &[0..4]), "ábc".to_string());
         assert_eq!(extract_bytes("ábc", &[3..4, 2..3]), "cb".to_string());
+    }
+
+    #[test]
+    fn test_extract_fields() {
+        let rec = StringRecord::from(vec!["Captain", "Sham", "12345"]);
+        assert_eq!(extract_fields(&rec, &[0..1]), &["Captain"]);
+        assert_eq!(extract_fields(&rec, &[1..2]), &["Sham"]);
+        assert_eq!(extract_fields(&rec, &[0..1, 2..3]), &["Captain", "12345"]);
+        assert_eq!(extract_fields(&rec, &[0..1, 3..4]), &["Captain"]);
+        assert_eq!(extract_fields(&rec, &[1..2, 0..1]), &["Sham", "Captain"]);
     }
 }
