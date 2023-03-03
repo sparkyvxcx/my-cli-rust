@@ -152,6 +152,16 @@ fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
     }
 }
 
+fn extract_chars_book(line: &str, char_pos: &[Range<usize>]) -> String {
+    let chars: Vec<_> = line.chars().collect();
+    char_pos
+        .iter()
+        .cloned()
+        .map(|range| range.filter_map(|i| chars.get(i)))
+        .flatten()
+        .collect()
+}
+
 fn extract_chars(line: &str, char_pos: &[Range<usize>]) -> String {
     char_pos
         .iter()
@@ -165,6 +175,16 @@ fn extract_chars(line: &str, char_pos: &[Range<usize>]) -> String {
             x
         })
         .collect::<String>()
+}
+
+fn extract_bytes_book(line: &str, byte_pos: &[Range<usize>]) -> String {
+    let bytes = line.as_bytes();
+    let selected: Vec<_> = byte_pos
+        .iter()
+        .cloned()
+        .flat_map(|range| range.filter_map(|i| bytes.get(i)).copied())
+        .collect();
+    String::from_utf8_lossy(&selected).into_owned()
 }
 
 fn extract_bytes(line: &str, byte_pos: &[Range<usize>]) -> String {
