@@ -1,6 +1,6 @@
 use crate::Extract::*;
 use clap::{App, Arg};
-use csv::{Reader, ReaderBuilder, StringRecord};
+use csv::{ReaderBuilder, StringRecord, WriterBuilder};
 use regex::Regex;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -102,43 +102,33 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    // println!("{:#?}", config);
     for filename in &config.files {
         match open(filename) {
-            Ok(buf) => {
-                // println!("Opened {}", filename);
-                match &config.extract {
-                    Bytes(byte_pos) => {
-                        for line in buf.lines() {
-                            let line = line.unwrap();
-                            println!("{}", extract_bytes(&line, &byte_pos))
-                        }
-                    }
-                    Chars(char_pos) => {
-                        for line in buf.lines() {
-                            let line = line.unwrap();
-                            println!("{}", extract_chars(&line, &char_pos))
-                        }
-                    }
-                    Fields(field_pos) => {
-                        let mut reader = ReaderBuilder::new()
-                            .delimiter(config.delimiter)
-                            .from_reader(buf);
-                        println!(
-                            "{}",
-                            extract_fields(reader.headers()?, field_pos)
-                                .join(&(config.delimiter as char).to_string())
-                        );
-                        for record in reader.records() {
-                            println!(
-                                "{}",
-                                extract_fields(&record?, field_pos)
-                                    .join(&(config.delimiter as char).to_string())
-                            );
-                        }
+            Ok(buf) => match &config.extract {
+                Bytes(byte_pos) => {
+                    for line in buf.lines() {
+                        println!("{}", extract_bytes(&line?, &byte_pos))
                     }
                 }
-            }
+                Chars(char_pos) => {
+                    for line in buf.lines() {
+                        println!("{}", extract_chars(&line?, &char_pos))
+                    }
+                }
+                Fields(field_pos) => {
+                    let mut reader = ReaderBuilder::new()
+                        .delimiter(config.delimiter)
+                        .has_headers(false)
+                        .from_reader(buf);
+
+                    let mut writer = WriterBuilder::new()
+                        .delimiter(config.delimiter)
+                        .from_writer(io::stdout());
+                    for record in reader.records() {
+                        writer.write_record(extract_fields(&record?, field_pos))?;
+                    }
+                }
+            },
             Err(err) => eprintln!("{}: {}", filename, err),
         }
     }
@@ -196,7 +186,15 @@ fn extract_bytes(line: &str, byte_pos: &[Range<usize>]) -> String {
             }
         }
     });
-    String::from_utf8_lossy(&buf[..]).into_owned()
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
+fn extract_fields_book<'a>(record: &'a StringRecord, field_pos: &[Range<usize>]) -> Vec<&'a str> {
+    field_pos
+        .iter()
+        .cloned()
+        .flat_map(|range| range.filter_map(|i| record.get(i)))
+        .collect()
 }
 
 fn extract_fields(record: &StringRecord, field_pos: &[Range<usize>]) -> Vec<String> {
