@@ -1,6 +1,8 @@
 use clap::{App, Arg};
 use regex::{Regex, RegexBuilder};
 use std::error::Error;
+use std::fs::{self, File};
+use std::io::{self, BufRead, BufReader};
 use walkdir::WalkDir;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
@@ -82,15 +84,28 @@ pub fn get_args() -> MyResult<Config> {
 
 pub fn run(config: Config) -> MyResult<()> {
     println!("{:#?}", config);
+
+    println!("pattern \"{}\"", config.pattern);
+
+    let entries = find_files(&config.files, config.recursive);
+    for entry in entries {
+        match entry {
+            Ok(filename) => println!("file \"{}\"", filename),
+            Err(e) => eprintln!("{}", e),
+        }
+    }
+
     Ok(())
 }
-
-use std::fs;
 
 fn find_files(paths: &[String], recursive: bool) -> Vec<MyResult<String>> {
     // unimplemented!()
     let mut results = vec![];
     for path in paths {
+        if path == "-" {
+            results.push(Ok(path.clone()));
+            continue;
+        }
         let metadata = match fs::metadata(path) {
             Ok(m) => m,
             Err(e) => {
@@ -118,14 +133,49 @@ fn find_files(paths: &[String], recursive: bool) -> Vec<MyResult<String>> {
         }
     }
 
-    dbg!("{}", &results);
     results
+}
+
+fn find_lines<T: BufRead>(
+    mut file: T,
+    pattern: &Regex,
+    invert_match: bool,
+) -> MyResult<Vec<String>> {
+    let mut results = vec![];
+    loop {
+        let mut buffer = String::new();
+        let size = file.read_line(&mut buffer)?;
+        if size == 0 {
+            break;
+        }
+        if pattern.is_match(&buffer) {
+            if !invert_match {
+                results.push(buffer);
+            }
+        } else {
+            if invert_match {
+                results.push(buffer);
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::find_files;
+    use super::find_lines;
     use rand::{distributions::Alphanumeric, Rng};
+    use regex::{Regex, RegexBuilder};
+    use std::io::Cursor;
 
     #[test]
     fn test_find_files() {
@@ -169,5 +219,37 @@ mod tests {
         let files = find_files(&[bad], false);
         assert_eq!(files.len(), 1);
         assert!(files[0].is_err());
+    }
+
+    #[test]
+    fn test_find_lines() {
+        let text = b"Lorem\nIpsum\r\nDOLOR";
+
+        // The pattern _or_ should match the one line, "Lorem"
+        let re1 = Regex::new("or").unwrap();
+        let matches = find_lines(Cursor::new(&text), &re1, false);
+        assert!(matches.is_ok());
+        assert_eq!(matches.unwrap().len(), 1);
+
+        // When inverted, the function should match the other two lines
+        let matches = find_lines(Cursor::new(&text), &re1, true);
+        assert!(matches.is_ok());
+        assert_eq!(matches.unwrap().len(), 2);
+
+        // This regex will be case-insensitive
+        let re2 = RegexBuilder::new("or")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+
+        // The two lines "Lorem" and "DOLOR" should match
+        let matches = find_lines(Cursor::new(&text), &re2, false);
+        assert!(matches.is_ok());
+        assert_eq!(matches.unwrap().len(), 2);
+
+        // When inverted, the one remaining line should match
+        let matches = find_lines(Cursor::new(&text), &re2, true);
+        assert!(matches.is_ok());
+        assert_eq!(matches.unwrap().len(), 1);
     }
 }
