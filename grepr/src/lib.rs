@@ -83,15 +83,39 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("{:#?}", config);
-
-    println!("pattern \"{}\"", config.pattern);
+    // println!("{:#?}", config);
+    // println!("pattern \"{}\"", config.pattern);
 
     let entries = find_files(&config.files, config.recursive);
-    for entry in entries {
+    let multiple = entries.len() > 1;
+    for (idx, entry) in entries.iter().enumerate() {
         match entry {
-            Ok(filename) => println!("file \"{}\"", filename),
-            Err(e) => eprintln!("{}", e),
+            Ok(filename) => match open(&filename) {
+                Ok(file) => {
+                    let matches = find_lines(file, &config.pattern, config.invert_match)?;
+                    // println!("Found {:?}", matches);
+                    if config.count {
+                        if multiple {
+                            println!("{}:{}", filename, matches.len());
+                        } else {
+                            println!("{}", matches.len());
+                        }
+                        continue;
+                    }
+
+                    for each_match in matches {
+                        if each_match.len() > 0 {
+                            if multiple {
+                                print!("{}:{}", filename, each_match);
+                            } else {
+                                print!("{}", each_match);
+                            }
+                        }
+                    }
+                }
+                Err(e) => eprintln!("{}: {}", filename, e),
+            },
+            Err(e) => eprintln!("{}: {}", config.files[idx], e),
         }
     }
 
