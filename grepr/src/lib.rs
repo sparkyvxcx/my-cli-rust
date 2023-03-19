@@ -3,6 +3,7 @@ use regex::{Regex, RegexBuilder};
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader};
+use std::mem;
 use walkdir::WalkDir;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
@@ -88,28 +89,27 @@ pub fn run(config: Config) -> MyResult<()> {
 
     let entries = find_files(&config.files, config.recursive);
     let multiple = entries.len() > 1;
+    let print = |fname: &str, val: &str| {
+        if multiple {
+            print!("{}:{}", fname, val);
+        } else {
+            print!("{}", val);
+        }
+    };
+
     for (idx, entry) in entries.iter().enumerate() {
         match entry {
             Ok(filename) => match open(&filename) {
                 Ok(file) => {
                     let matches = find_lines(file, &config.pattern, config.invert_match)?;
-                    // println!("Found {:?}", matches);
                     if config.count {
-                        if multiple {
-                            println!("{}:{}", filename, matches.len());
-                        } else {
-                            println!("{}", matches.len());
-                        }
+                        print(filename, &format!("{}\n", matches.len()));
                         continue;
                     }
 
                     for each_match in matches {
                         if each_match.len() > 0 {
-                            if multiple {
-                                print!("{}:{}", filename, each_match);
-                            } else {
-                                print!("{}", each_match);
-                            }
+                            print(filename, &format!("{}", each_match));
                         }
                     }
                 }
@@ -133,7 +133,7 @@ fn find_files(paths: &[String], recursive: bool) -> Vec<MyResult<String>> {
         let metadata = match fs::metadata(path) {
             Ok(m) => m,
             Err(e) => {
-                results.push(Err(From::from(format!("{}", e))));
+                results.push(Err(From::from(format!("{}: {}", path, e))));
                 continue;
             }
         };
@@ -143,10 +143,7 @@ fn find_files(paths: &[String], recursive: bool) -> Vec<MyResult<String>> {
             if recursive {
                 WalkDir::new(path)
                     .into_iter()
-                    .filter_map(|e| match e {
-                        Ok(entry) => Some(entry),
-                        Err(_) => None,
-                    })
+                    .flatten()
                     .filter(|entry| entry.file_type().is_file())
                     .for_each(|entry| results.push(Ok(entry.path().display().to_string())));
             } else {
@@ -166,21 +163,16 @@ fn find_lines<T: BufRead>(
     invert_match: bool,
 ) -> MyResult<Vec<String>> {
     let mut results = vec![];
+    let mut buffer = String::new();
     loop {
-        let mut buffer = String::new();
-        let size = file.read_line(&mut buffer)?;
-        if size == 0 {
+        let bytes = file.read_line(&mut buffer)?;
+        if bytes == 0 {
             break;
         }
-        if pattern.is_match(&buffer) {
-            if !invert_match {
-                results.push(buffer);
-            }
-        } else {
-            if invert_match {
-                results.push(buffer);
-            }
+        if pattern.is_match(&buffer) ^ invert_match {
+            results.push(mem::take(&mut buffer));
         }
+        buffer.clear();
     }
 
     Ok(results)
