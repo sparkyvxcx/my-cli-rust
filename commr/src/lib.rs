@@ -1,8 +1,10 @@
 use std::{
+    cmp::Ordering,
     fs::File,
     io::{self, BufRead, BufReader},
 };
 
+use crate::Column::*;
 use clap::{App, Arg};
 
 type MyResult<T> = Result<T, Box<dyn std::error::Error>>;
@@ -16,6 +18,12 @@ pub struct Config {
     show_col3: bool,
     insensitive: bool,
     delimiter: String,
+}
+
+enum Column<'a> {
+    Col1(&'a str),
+    Col2(&'a str),
+    Col3(&'a str),
 }
 
 pub fn get_args() -> MyResult<Config> {
@@ -75,9 +83,9 @@ pub fn get_args() -> MyResult<Config> {
     let file1 = matches.value_of("file1").unwrap().to_owned();
     let file2 = matches.value_of("file2").unwrap().to_owned();
 
-    let show_col1 = !matches.is_present("show_col1");
-    let show_col2 = !matches.is_present("show_col2");
-    let show_col3 = !matches.is_present("show_col3");
+    let show_col1 = !matches.is_present("suppress_col1");
+    let show_col2 = !matches.is_present("suppress_col2");
+    let show_col3 = !matches.is_present("suppress_col3");
 
     let insensitive = matches.is_present("insensitive");
     let delimiter = matches.value_of("delimiter").unwrap().to_owned();
@@ -102,8 +110,82 @@ pub fn run(config: Config) -> MyResult<()> {
         return Err(From::from("Both input files cannot be STDIN (\"-\")"));
     }
 
-    let _file1 = open(file1)?;
-    let _file2 = open(file2)?;
+    let case = |line: String| {
+        if config.insensitive {
+            line.to_lowercase()
+        } else {
+            line
+        }
+    };
+
+    let print = |col: Column| {
+        let mut columns = vec![];
+        match col {
+            Col1(val) => {
+                if config.show_col1 {
+                    columns.push(val);
+                }
+            }
+            Col2(val) => {
+                if config.show_col2 {
+                    if config.show_col1 {
+                        columns.push("");
+                    }
+                    columns.push(val);
+                }
+            }
+            Col3(val) => {
+                if config.show_col3 {
+                    if config.show_col1 {
+                        columns.push("");
+                    }
+                    if config.show_col2 {
+                        columns.push("");
+                    }
+                    columns.push(val);
+                }
+            }
+        }
+
+        if !columns.is_empty() {
+            println!("{}", columns.join(&config.delimiter));
+        }
+    };
+
+    let mut file1_lines = open(file1)?.lines().filter_map(Result::ok).map(case);
+    let mut file2_lines = open(file2)?.lines().filter_map(Result::ok).map(case);
+
+    let mut line1 = file1_lines.next();
+    let mut line2 = file2_lines.next();
+
+    while line1.is_some() || line2.is_some() {
+        match (&line1, &line2) {
+            (Some(val1), Some(val2)) => match val1.cmp(val2) {
+                Ordering::Equal => {
+                    print(Col3(val1));
+                    line1 = file1_lines.next();
+                    line2 = file2_lines.next();
+                }
+                Ordering::Greater => {
+                    print(Col2(val2));
+                    line2 = file2_lines.next();
+                }
+                Ordering::Less => {
+                    print(Col1(val1));
+                    line1 = file1_lines.next();
+                }
+            },
+            (Some(val1), None) => {
+                print(Col1(val1));
+                line1 = file1_lines.next();
+            }
+            (None, Some(val2)) => {
+                print(Col2(val2));
+                line2 = file2_lines.next();
+            }
+            _ => (),
+        }
+    }
 
     Ok(())
 }
