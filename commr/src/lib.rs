@@ -26,7 +26,6 @@ enum Column<'a> {
     Col3(&'a str),
 }
 
-// TODO: change the column suppression flags to selection flags
 pub fn get_args() -> MyResult<Config> {
     let matches = App::new("commr")
         .version("0.1.0")
