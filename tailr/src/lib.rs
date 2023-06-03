@@ -36,6 +36,7 @@ pub fn get_args() -> MyResult<Config> {
                 .help("Number of bytes")
                 .short("c")
                 .long("bytes")
+                .conflicts_with("lines")
                 .takes_value(true),
         )
         .arg(
@@ -43,6 +44,7 @@ pub fn get_args() -> MyResult<Config> {
                 .help("Number of lines")
                 .short("n")
                 .long("lines")
+                .conflicts_with("bytes")
                 .takes_value(true)
                 .default_value("10"),
         )
@@ -59,12 +61,12 @@ pub fn get_args() -> MyResult<Config> {
         .value_of("bytes")
         .map(parse_input_num)
         .transpose()
-        .unwrap();
+        .map_err(|e| format!("illegal byte count -- {}", e))?;
     let lines = matches
         .value_of("lines")
         .map(parse_input_num)
         .unwrap()
-        .unwrap();
+        .map_err(|e| format!("illegal line count -- {}", e))?;
     let quiet = matches.is_present("quiet");
 
     Ok(Config {
@@ -94,12 +96,7 @@ fn parse_input_num(val: &str) -> MyResult<TakeValue> {
         }
     }
     match val.parse::<i64>() {
-        Ok(num) => {
-            if num == 0 {
-                return Ok(PlusZero);
-            }
-            Ok(TakeNum(num))
-        }
+        Ok(num) => Ok(TakeNum(num * -1)),
         _ => Err(From::from(val)),
     }
 }
