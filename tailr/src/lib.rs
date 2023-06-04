@@ -12,7 +12,7 @@ pub struct Config {
     pub quiet: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TakeValue {
     PlusZero,
     TakeNum(i64),
@@ -96,7 +96,69 @@ fn parse_input_num(val: &str) -> MyResult<TakeValue> {
         }
     }
     match val.parse::<i64>() {
-        Ok(num) => Ok(TakeNum(num * -1)),
+        Ok(num) if num < 0 => Ok(TakeNum(num)),
+        Ok(num) if num >= 0 => Ok(TakeNum(num * -1)),
         _ => Err(From::from(val)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_input_num;
+    use super::TakeValue::*;
+
+    #[test]
+    fn test_parse_num() {
+        // All integers should be interpreted as negative numbers
+        let res = parse_input_num("3");
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), TakeNum(-3));
+
+        // A leading "+" should result in a positive number
+        let res = parse_input_num("+3");
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), TakeNum(3));
+
+        // An explicit "-" should result in a negative number
+        let res = parse_input_num("-3");
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), TakeNum(-3));
+
+        // Zero is zero
+        let res = parse_input_num("0");
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), TakeNum(0));
+
+        // Plus zero is special
+        let res = parse_input_num("+0");
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), PlusZero);
+
+        // Test boundries
+        let res = parse_input_num(&(i64::MAX).to_string());
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), TakeNum(i64::MIN + 1));
+
+        let res = parse_input_num(&(i64::MIN + 1).to_string());
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), TakeNum(i64::MIN + 1));
+
+        let res = parse_input_num(&format!("+{}", i64::MAX));
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), TakeNum(i64::MAX));
+
+        let res = parse_input_num(&i64::MIN.to_string());
+        // assert!(res.is_ok());
+        assert_eq!(res.unwrap(), TakeNum(i64::MIN));
+
+        // A floating-point value is invalid
+        let res = parse_input_num("3.14");
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "3.14");
+
+        // A non-integer string is invalid
+        let res = parse_input_num("foo");
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "foo");
     }
 }
