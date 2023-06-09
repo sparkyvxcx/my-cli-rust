@@ -1,9 +1,11 @@
 use crate::TakeValue::*;
 use clap::{App, Arg};
+use once_cell::sync::OnceCell;
 use regex::Regex;
 use std::error::Error;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
+static NUM_RE: OnceCell<Regex> = OnceCell::new();
 
 #[derive(Debug)]
 pub struct Config {
@@ -29,7 +31,6 @@ pub fn get_args() -> MyResult<Config> {
                 .value_name("FILES")
                 .help("Input file(s)")
                 .multiple(true)
-                .default_value("-")
                 .required(true),
         )
         .arg(
@@ -37,15 +38,15 @@ pub fn get_args() -> MyResult<Config> {
                 .help("Number of bytes")
                 .short("c")
                 .long("bytes")
-                .conflicts_with("lines")
-                .takes_value(true),
+                .value_name("BYTES")
+                .conflicts_with("lines"),
         )
         .arg(
             Arg::with_name("lines")
                 .help("Number of lines")
                 .short("n")
                 .long("lines")
-                .conflicts_with("bytes")
+                .value_name("LINES")
                 .takes_value(true)
                 .default_value("10"),
         )
@@ -65,7 +66,7 @@ pub fn get_args() -> MyResult<Config> {
         .map_err(|e| format!("illegal byte count -- {}", e))?;
     let lines = matches
         .value_of("lines")
-        .map(parse_input_num)
+        .map(parse_num)
         .unwrap()
         .map_err(|e| format!("illegal line count -- {}", e))?;
     let quiet = matches.is_present("quiet");
@@ -84,8 +85,7 @@ pub fn run(config: Config) -> MyResult<()> {
 }
 
 fn parse_num(val: &str) -> MyResult<TakeValue> {
-    let num_re = Regex::new(r"^([+-])?(\d+)$").unwrap();
-
+    let num_re = NUM_RE.get_or_init(|| Regex::new(r"^([+-])?(\d+)$").unwrap());
     match num_re.captures(val) {
         Some(caps) => {
             let sign = caps.get(1).map_or("-", |m| m.as_str());
@@ -98,6 +98,25 @@ fn parse_num(val: &str) -> MyResult<TakeValue> {
                 }
             } else {
                 Err(From::from(val))
+            }
+        }
+        _ => Err(From::from(val)),
+    }
+}
+
+fn parse_num_normal(val: &str) -> MyResult<TakeValue> {
+    let signs: &[char] = &['+', '-'];
+    let res = val
+        .starts_with(signs)
+        .then(|| val.parse())
+        .unwrap_or_else(|| val.parse().map(i64::wrapping_neg));
+
+    match res {
+        Ok(num) => {
+            if num == 0 && val.starts_with('+') {
+                Ok(PlusZero)
+            } else {
+                Ok(TakeNum(num))
             }
         }
         _ => Err(From::from(val)),
