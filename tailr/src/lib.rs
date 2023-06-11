@@ -2,7 +2,13 @@ use crate::TakeValue::*;
 use clap::{App, Arg};
 use once_cell::sync::OnceCell;
 use regex::Regex;
-use std::error::Error;
+use std::{
+    eprint, eprintln,
+    error::Error,
+    fs::File,
+    io::{BufRead, BufReader},
+    println, unimplemented,
+};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 static NUM_RE: OnceCell<Regex> = OnceCell::new();
@@ -80,7 +86,20 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("{:#?}", config);
+    // println!("{:#?}", config);
+    for filename in config.files {
+        match File::open(&filename) {
+            Ok(_) => {
+                println!("Opened {}", filename);
+                let (total_lines, total_bytes) = count_lines_bytes(&filename)?;
+                println!(
+                    "{} has {} lines and {} bytes",
+                    filename, total_lines, total_bytes
+                );
+            }
+            Err(err) => eprintln!("{}: {}", filename, err),
+        }
+    }
     Ok(())
 }
 
@@ -123,6 +142,25 @@ fn parse_num_normal(val: &str) -> MyResult<TakeValue> {
     }
 }
 
+fn count_lines_bytes(filename: &str) -> MyResult<(i64, i64)> {
+    let mut file = BufReader::new(File::open(filename)?);
+    let mut num_lines = 0;
+    let mut num_bytes = 0;
+    let mut line = String::new();
+
+    loop {
+        let bytes_read = file.read_line(&mut line)?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        num_lines += 1;
+        num_bytes += bytes_read;
+    }
+
+    Ok((num_lines as i64, num_bytes as i64))
+}
+
 fn parse_input_num(val: &str) -> MyResult<TakeValue> {
     if val.contains("+") {
         let new_val = val.replace("+", "");
@@ -145,6 +183,8 @@ fn parse_input_num(val: &str) -> MyResult<TakeValue> {
 
 #[cfg(test)]
 mod tests {
+    use crate::count_lines_bytes;
+
     use super::TakeValue::*;
     use super::{parse_input_num, parse_num};
 
@@ -256,5 +296,16 @@ mod tests {
         let res = parse_num("foo");
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "foo");
+    }
+
+    #[test]
+    fn test_count_lines_bytes() {
+        let res = count_lines_bytes("tests/inputs/one.txt");
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), (1, 24));
+
+        let res = count_lines_bytes("tests/inputs/ten.txt");
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), (10, 49));
     }
 }
