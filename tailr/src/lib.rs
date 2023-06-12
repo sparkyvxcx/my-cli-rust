@@ -2,13 +2,12 @@ use crate::TakeValue::*;
 use clap::{App, Arg};
 use once_cell::sync::OnceCell;
 use regex::Regex;
-use std::{
-    error::Error,
-    fs::File,
-    io::{BufRead, BufReader, Read, Seek},
-};
+use std::error::Error;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
+
 static NUM_RE: OnceCell<Regex> = OnceCell::new();
 
 #[derive(Debug)]
@@ -180,19 +179,18 @@ fn count_lines_bytes(filename: &str) -> MyResult<(i64, i64)> {
     let mut file = BufReader::new(File::open(filename)?);
     let mut num_lines = 0;
     let mut num_bytes = 0;
-    let mut line = String::new();
+    let mut buf = Vec::new();
 
     loop {
-        let bytes_read = file.read_line(&mut line)?;
+        let bytes_read = file.read_until(b'\n', &mut buf)?;
         if bytes_read == 0 {
             break;
         }
-
         num_lines += 1;
-        num_bytes += bytes_read;
+        num_bytes += bytes_read as i64;
+        buf.clear();
     }
-
-    Ok((num_lines as i64, num_bytes as i64))
+    Ok((num_lines, num_bytes))
 }
 
 fn get_start_index(take_val: &TakeValue, total: i64) -> Option<u64> {
@@ -205,18 +203,14 @@ fn get_start_index(take_val: &TakeValue, total: i64) -> Option<u64> {
             }
         }
         TakeNum(num) => {
-            if total == 0 || *num == 0 {
+            if total == 0 || num == &0 || num > &total {
                 None
-            } else if *num > 0 {
-                if *num > total {
-                    None
-                } else {
-                    Some((*num - 1) as u64)
-                }
+            } else if num > &0 {
+                Some((num - 1) as u64)
             } else {
-                let line = *num + total;
-                if line > 0 {
-                    Some(line as u64)
+                let start = num + total;
+                if start > 0 {
+                    Some(start as u64)
                 } else {
                     Some(0)
                 }
@@ -226,20 +220,20 @@ fn get_start_index(take_val: &TakeValue, total: i64) -> Option<u64> {
 }
 
 fn print_lines(mut file: impl BufRead, num_lines: &TakeValue, total_lines: i64) -> MyResult<()> {
-    if let Some(index_num) = get_start_index(num_lines, total_lines) {
-        let mut line = String::new();
-        let mut count = 0;
+    if let Some(start) = get_start_index(num_lines, total_lines) {
+        let mut line_num = 0;
+        let mut buf = Vec::new();
         loop {
-            let bytes_read = file.read_line(&mut line)?;
+            let bytes_read = file.read_until(b'\n', &mut buf)?;
             if bytes_read == 0 {
                 break;
             }
-            if index_num == count as u64 {
-                print!("{}", line);
+            if start == line_num as u64 {
+                print!("{}", String::from_utf8_lossy(&buf));
             } else {
-                count += 1;
+                line_num += 1;
             }
-            line.clear();
+            buf.clear();
         }
     }
     Ok(())
@@ -250,12 +244,13 @@ fn print_bytes<T: Read + Seek>(
     num_bytes: &TakeValue,
     total_bytes: i64,
 ) -> MyResult<()> {
-    if let Some(index_num) = get_start_index(num_bytes, total_bytes) {
-        file.seek(std::io::SeekFrom::Start(index_num))?;
+    if let Some(start) = get_start_index(num_bytes, total_bytes) {
+        file.seek(SeekFrom::Start(start))?;
         let mut buf = vec![];
         file.read_to_end(&mut buf)?;
-        let content = String::from_utf8_lossy(&buf);
-        print!("{}", content);
+        if !buf.is_empty() {
+            print!("{}", String::from_utf8_lossy(&buf));
+        }
     }
     Ok(())
 }
