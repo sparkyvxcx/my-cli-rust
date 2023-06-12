@@ -230,17 +230,18 @@ fn get_start_index(take_val: &TakeValue, total: i64) -> Option<u64> {
 fn print_lines(mut file: impl BufRead, num_lines: &TakeValue, total_lines: i64) -> MyResult<()> {
     if let Some(mut index_num) = get_start_index(num_lines, total_lines) {
         let mut line = String::new();
+        let mut count = 0;
         loop {
             let bytes_read = file.read_line(&mut line)?;
             if bytes_read == 0 {
                 break;
             }
-            if index_num == 0 {
+            if index_num == count as u64 {
                 print!("{}", line);
-                line.clear();
             } else {
-                index_num -= 1;
+                count += 1;
             }
+            line.clear();
         }
     }
     Ok(())
