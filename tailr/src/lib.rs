@@ -6,7 +6,7 @@ use std::{
     eprint, eprintln,
     error::Error,
     fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read, Seek},
     println, unimplemented,
 };
 
@@ -87,15 +87,31 @@ pub fn get_args() -> MyResult<Config> {
 
 pub fn run(config: Config) -> MyResult<()> {
     // println!("{:#?}", config);
+    let multiple = config.files.len() > 1;
+    let mut files_left = config.files.len();
     for filename in config.files {
         match File::open(&filename) {
-            Ok(_) => {
-                println!("Opened {}", filename);
+            Ok(file_handle) => {
+                // println!("Opened {}", filename);
+                if multiple && !config.quiet {
+                    println!("==> {} <==", filename);
+                    files_left -= 1;
+                }
                 let (total_lines, total_bytes) = count_lines_bytes(&filename)?;
+                /*
                 println!(
                     "{} has {} lines and {} bytes",
                     filename, total_lines, total_bytes
                 );
+                */
+                if config.bytes.is_none() {
+                    print_lines(BufReader::new(file_handle), &config.lines, total_lines)?;
+                } else {
+                    // print_bytes
+                }
+                if multiple && !config.quiet && files_left > 0 {
+                    println!()
+                }
             }
             Err(err) => eprintln!("{}: {}", filename, err),
         }
@@ -142,25 +158,6 @@ fn parse_num_normal(val: &str) -> MyResult<TakeValue> {
     }
 }
 
-fn count_lines_bytes(filename: &str) -> MyResult<(i64, i64)> {
-    let mut file = BufReader::new(File::open(filename)?);
-    let mut num_lines = 0;
-    let mut num_bytes = 0;
-    let mut line = String::new();
-
-    loop {
-        let bytes_read = file.read_line(&mut line)?;
-        if bytes_read == 0 {
-            break;
-        }
-
-        num_lines += 1;
-        num_bytes += bytes_read;
-    }
-
-    Ok((num_lines as i64, num_bytes as i64))
-}
-
 fn parse_input_num(val: &str) -> MyResult<TakeValue> {
     if val.contains("+") {
         let new_val = val.replace("+", "");
@@ -181,12 +178,88 @@ fn parse_input_num(val: &str) -> MyResult<TakeValue> {
     }
 }
 
+fn count_lines_bytes(filename: &str) -> MyResult<(i64, i64)> {
+    let mut file = BufReader::new(File::open(filename)?);
+    let mut num_lines = 0;
+    let mut num_bytes = 0;
+    let mut line = String::new();
+
+    loop {
+        let bytes_read = file.read_line(&mut line)?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        num_lines += 1;
+        num_bytes += bytes_read;
+    }
+
+    Ok((num_lines as i64, num_bytes as i64))
+}
+
+fn get_start_index(take_val: &TakeValue, total: i64) -> Option<u64> {
+    match take_val {
+        PlusZero => {
+            if total == 0 {
+                None
+            } else {
+                Some(0)
+            }
+        }
+        TakeNum(num) => {
+            if total == 0 || *num == 0 {
+                None
+            } else if *num > 0 {
+                if *num > total {
+                    None
+                } else {
+                    Some((*num - 1) as u64)
+                }
+            } else {
+                let line = *num + total;
+                if line > 0 {
+                    Some(line as u64)
+                } else {
+                    Some(0)
+                }
+            }
+        }
+    }
+}
+
+fn print_lines(mut file: impl BufRead, num_lines: &TakeValue, total_lines: i64) -> MyResult<()> {
+    if let Some(mut index_num) = get_start_index(num_lines, total_lines) {
+        let mut line = String::new();
+        loop {
+            let bytes_read = file.read_line(&mut line)?;
+            if bytes_read == 0 {
+                break;
+            }
+            if index_num == 0 {
+                print!("{}", line);
+                line.clear();
+            } else {
+                index_num -= 1;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn print_bytes<T: Read + Seek>(
+    mut file: T,
+    num_bytes: &TakeValue,
+    total_bytes: i64,
+) -> MyResult<()> {
+    unimplemented!();
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::count_lines_bytes;
+    use crate::get_start_index;
 
     use super::TakeValue::*;
-    use super::{parse_input_num, parse_num};
+    use super::{count_lines_bytes, parse_input_num, parse_num};
 
     #[test]
     fn test_parse_input_num() {
@@ -307,5 +380,40 @@ mod tests {
         let res = count_lines_bytes("tests/inputs/ten.txt");
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), (10, 49));
+    }
+
+    #[test]
+    fn test_get_start_index() {
+        // +0 from an empty file (0 lines/bytes) returns None
+        assert_eq!(get_start_index(&PlusZero, 0), None);
+
+        // +0 from a nonempty file returns an index that
+        // is one less than the number of lines/bytes
+        assert_eq!(get_start_index(&PlusZero, 1), Some(0));
+
+        // Taking 0 lines/bytes returns None
+        assert_eq!(get_start_index(&TakeNum(0), 1), None);
+
+        // Taking any lines/bytes from an empty file returns None
+        assert_eq!(get_start_index(&TakeNum(1), 0), None);
+
+        // Taking more lines/bytes than is available returns None
+        assert_eq!(get_start_index(&TakeNum(2), 1), None);
+
+        // When starting line/byte is less than total lines/bytes,
+        // return one less than starting number
+        assert_eq!(get_start_index(&TakeNum(1), 10), Some(0));
+        assert_eq!(get_start_index(&TakeNum(2), 10), Some(1));
+        assert_eq!(get_start_index(&TakeNum(3), 10), Some(2));
+
+        // When staring line/byte is negative and less than total,
+        // return total - start
+        assert_eq!(get_start_index(&TakeNum(-1), 10), Some(9));
+        assert_eq!(get_start_index(&TakeNum(-2), 10), Some(8));
+        assert_eq!(get_start_index(&TakeNum(-3), 10), Some(7));
+
+        // When starting line/byte is negative and more than total,
+        // return 0 to print the whole file
+        assert_eq!(get_start_index(&TakeNum(-20), 10), Some(0));
     }
 }
