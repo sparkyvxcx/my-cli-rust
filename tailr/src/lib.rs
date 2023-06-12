@@ -3,11 +3,9 @@ use clap::{App, Arg};
 use once_cell::sync::OnceCell;
 use regex::Regex;
 use std::{
-    eprint, eprintln,
     error::Error,
     fs::File,
     io::{BufRead, BufReader, Read, Seek},
-    println, unimplemented,
 };
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
@@ -104,10 +102,10 @@ pub fn run(config: Config) -> MyResult<()> {
                     filename, total_lines, total_bytes
                 );
                 */
-                if config.bytes.is_none() {
-                    print_lines(BufReader::new(file_handle), &config.lines, total_lines)?;
+                if let Some(bytes) = &config.bytes {
+                    print_bytes(BufReader::new(file_handle), &bytes, total_bytes)?;
                 } else {
-                    // print_bytes
+                    print_lines(BufReader::new(file_handle), &config.lines, total_lines)?;
                 }
                 if multiple && !config.quiet && files_left > 0 {
                     println!()
@@ -228,7 +226,7 @@ fn get_start_index(take_val: &TakeValue, total: i64) -> Option<u64> {
 }
 
 fn print_lines(mut file: impl BufRead, num_lines: &TakeValue, total_lines: i64) -> MyResult<()> {
-    if let Some(mut index_num) = get_start_index(num_lines, total_lines) {
+    if let Some(index_num) = get_start_index(num_lines, total_lines) {
         let mut line = String::new();
         let mut count = 0;
         loop {
@@ -252,7 +250,14 @@ fn print_bytes<T: Read + Seek>(
     num_bytes: &TakeValue,
     total_bytes: i64,
 ) -> MyResult<()> {
-    unimplemented!();
+    if let Some(index_num) = get_start_index(num_bytes, total_bytes) {
+        file.seek(std::io::SeekFrom::Start(index_num))?;
+        let mut buf = vec![];
+        file.read_to_end(&mut buf)?;
+        let content = String::from_utf8_lossy(&buf);
+        print!("{}", content);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
