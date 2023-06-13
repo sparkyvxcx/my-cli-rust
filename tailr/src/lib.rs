@@ -95,16 +95,11 @@ pub fn run(config: Config) -> MyResult<()> {
                     files_left -= 1;
                 }
                 let (total_lines, total_bytes) = count_lines_bytes(&filename)?;
-                /*
-                println!(
-                    "{} has {} lines and {} bytes",
-                    filename, total_lines, total_bytes
-                );
-                */
+                let file = BufReader::new(file_handle);
                 if let Some(bytes) = &config.bytes {
-                    print_bytes(BufReader::new(file_handle), &bytes, total_bytes)?;
+                    print_bytes(file, &bytes, total_bytes)?;
                 } else {
-                    print_lines(BufReader::new(file_handle), &config.lines, total_lines)?;
+                    print_lines(file, &config.lines, total_lines)?;
                 }
                 if multiple && !config.quiet && files_left > 0 {
                     println!()
@@ -136,6 +131,7 @@ fn parse_num(val: &str) -> MyResult<TakeValue> {
     }
 }
 
+#[allow(dead_code)]
 fn parse_num_normal(val: &str) -> MyResult<TakeValue> {
     let signs: &[char] = &['+', '-'];
     let res = val
