@@ -59,11 +59,7 @@ pub fn get_args() -> MyResult<Config> {
         }
         _ => None,
     };
-    let seed = matches
-        .value_of("seed")
-        .map(parse_seed_num)
-        .transpose()
-        .map_err(|e| format!("illegal seed number -- {}", e))?;
+    let seed = matches.value_of("seed").map(parse_seed_num).transpose()?;
 
     Ok(Config {
         source,
@@ -75,11 +71,31 @@ pub fn get_args() -> MyResult<Config> {
 fn parse_seed_num(val: &str) -> MyResult<u64> {
     match val.parse::<u64>() {
         Ok(num) => Ok(num),
-        _ => Err(From::from(val)),
+        _ => Err(From::from(format!("\"{}\" not a valid integer", val))),
     }
 }
 
 pub fn run(config: Config) -> MyResult<()> {
     println!("{:#?}", config);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_seed_num;
+
+    #[test]
+    fn test_parse_seed_num() {
+        let res = parse_seed_num("a");
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "\"a\" not a valid integer");
+
+        let res = parse_seed_num("0");
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), 0);
+
+        let res = parse_seed_num("4");
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), 4);
+    }
 }
