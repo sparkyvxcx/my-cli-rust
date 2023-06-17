@@ -1,12 +1,12 @@
 use clap::{App, Arg};
 use regex::{Regex, RegexBuilder};
-use std::error::Error;
+use std::{error::Error, path::PathBuf, unimplemented};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
 #[derive(Debug)]
 pub struct Config {
-    source: Vec<String>,
+    sources: Vec<String>,
     pattern: Option<Regex>,
     seed: Option<u64>,
 }
@@ -17,7 +17,7 @@ pub fn get_args() -> MyResult<Config> {
         .author("Ken Youens-Clark <kyclark@gmail.com>")
         .about("Rusty fortune")
         .arg(
-            Arg::with_name("source")
+            Arg::with_name("sources")
                 .value_name("FILES")
                 .help("Input files or directories")
                 .multiple(true)
@@ -26,14 +26,15 @@ pub fn get_args() -> MyResult<Config> {
         )
         .arg(
             Arg::with_name("pattern")
-                .help("Pattern")
                 .value_name("PATTERN")
+                .help("Pattern")
                 .short("m")
                 .long("pattern")
                 .takes_value(true),
         )
         .arg(
             Arg::with_name("seed")
+                .value_name("SEED")
                 .help("Random seed")
                 .short("s")
                 .long("seed")
@@ -48,31 +49,23 @@ pub fn get_args() -> MyResult<Config> {
         )
         .get_matches();
 
-    let source = matches.values_of_lossy("source").unwrap();
-    let pattern = match matches.value_of("pattern") {
-        Some(s) => {
-            let pattern = RegexBuilder::new(s)
+    let sources = matches.values_of_lossy("source").unwrap();
+    let pattern = matches
+        .value_of("pattern")
+        .map(|val| {
+            RegexBuilder::new(val)
                 .case_insensitive(matches.is_present("insensitive"))
                 .build()
-                .map_err(|_| format!("Invalid pattern \"{}\"", s))?;
-            Some(pattern)
-        }
-        _ => None,
-    };
+                .map_err(|_| format!("Invalid pattern \"{}\"", val))
+        })
+        .transpose()?;
     let seed = matches.value_of("seed").map(parse_seed_num).transpose()?;
 
     Ok(Config {
-        source,
+        sources,
         pattern,
         seed,
     })
-}
-
-fn parse_seed_num(val: &str) -> MyResult<u64> {
-    match val.parse::<u64>() {
-        Ok(num) => Ok(num),
-        _ => Err(From::from(format!("\"{}\" not a valid integer", val))),
-    }
 }
 
 pub fn run(config: Config) -> MyResult<()> {
@@ -80,9 +73,18 @@ pub fn run(config: Config) -> MyResult<()> {
     Ok(())
 }
 
+fn parse_seed_num(val: &str) -> MyResult<u64> {
+    val.parse()
+        .map_err(|_| format!("\"{}\" not a valid integer", val).into())
+}
+
+fn find_files(path: &[String]) -> MyResult<Vec<PathBuf>> {
+    unimplemented!();
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_seed_num;
+    use super::{find_files, parse_seed_num};
 
     #[test]
     fn test_parse_seed_num() {
@@ -97,5 +99,19 @@ mod tests {
         let res = parse_seed_num("4");
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), 4);
+    }
+
+    #[test]
+    fn test_find_files() {
+        // Verify that the function finds a file knonw to exist
+        let res = find_files(&["./tests/inputs/jokes".to_string()]);
+        assert!(res.is_ok());
+
+        let files = res.unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(
+            files.get(0).unwrap().to_string_lossy(),
+            "./tests/inputs/jokes"
+        );
     }
 }
