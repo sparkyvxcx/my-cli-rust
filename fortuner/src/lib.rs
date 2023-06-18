@@ -1,6 +1,9 @@
 use clap::{App, Arg};
 use regex::{Regex, RegexBuilder};
-use std::{error::Error, path::PathBuf, unimplemented};
+use std::{
+    error::Error,
+    path::{Path, PathBuf},
+};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -78,8 +81,41 @@ fn parse_seed_num(val: &str) -> MyResult<u64> {
         .map_err(|_| format!("\"{}\" not a valid integer", val).into())
 }
 
-fn find_files(path: &[String]) -> MyResult<Vec<PathBuf>> {
-    unimplemented!();
+fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
+    // unimplemented!();
+    let mut valid_paths = vec![];
+    for each_path in paths {
+        let new_path = Path::new(each_path);
+        if !new_path.exists() {
+            return Err(From::from(format!("path doesn't exist")));
+        }
+        if new_path.is_file() {
+            match new_path.extension() {
+                Some(ext) => {
+                    if ext.to_str().unwrap() == "dat" {
+                        continue;
+                    }
+                }
+                None => {}
+            }
+            valid_paths.push(new_path.to_owned());
+        } else {
+            let mut entries = vec![];
+            for entry in new_path.read_dir()? {
+                if let Ok(entry) = entry {
+                    println!("{:?}", entry.path());
+                    entries.push(entry.path().to_str().unwrap().to_string());
+                }
+            }
+            for each_path in find_files(&entries).unwrap() {
+                valid_paths.push(each_path);
+            }
+        }
+    }
+    valid_paths.sort();
+    Vec::dedup(&mut valid_paths);
+
+    Ok(valid_paths)
 }
 
 #[cfg(test)]
@@ -113,5 +149,37 @@ mod tests {
             files.get(0).unwrap().to_string_lossy(),
             "./tests/inputs/jokes"
         );
+
+        // Fails to find a bad file
+        let res = find_files(&["/path/does/not/exist".to_string()]);
+        assert!(res.is_err());
+
+        // Finds all the input files, excludes ".dat"
+        let res = find_files(&["./tests/inputs".to_string()]);
+        assert!(res.is_ok());
+
+        // Check number and order of files
+        let files = res.unwrap();
+        assert_eq!(files.len(), 5);
+        let first = files.get(0).unwrap().display().to_string();
+        assert!(first.contains("ascii-art"));
+        let last = files.last().unwrap().display().to_string();
+        assert!(last.contains("quotes"));
+
+        // Test for multiple sources, path must be unique and sorted
+        let res = find_files(&[
+            "./tests/inputs/jokes".to_string(),
+            "./tests/inputs/ascii-art".to_string(),
+            "./tests/inputs/jokes".to_string(),
+        ]);
+        assert!(res.is_ok());
+        let files = res.unwrap();
+        assert_eq!(files.len(), 2);
+        if let Some(filename) = files.first().unwrap().file_name() {
+            assert_eq!(filename.to_string_lossy(), "ascii-art".to_string());
+        }
+        if let Some(filename) = files.last().unwrap().file_name() {
+            assert_eq!(filename.to_string_lossy(), "jokes".to_string());
+        }
     }
 }
