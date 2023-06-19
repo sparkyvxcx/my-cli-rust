@@ -14,6 +14,12 @@ pub struct Config {
     seed: Option<u64>,
 }
 
+#[derive(Debug)]
+struct Fortune {
+    source: String,
+    text: String,
+}
+
 pub fn get_args() -> MyResult<Config> {
     let matches = App::new("fortuner")
         .version("0.1.0")
@@ -52,7 +58,7 @@ pub fn get_args() -> MyResult<Config> {
         )
         .get_matches();
 
-    let sources = matches.values_of_lossy("source").unwrap();
+    let sources = matches.values_of_lossy("sources").unwrap();
     let pattern = matches
         .value_of("pattern")
         .map(|val| {
@@ -72,7 +78,9 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
+    let files = find_files(&config.sources)?;
     println!("{:#?}", config);
+    println!("{:#?}", files);
     Ok(())
 }
 
@@ -86,9 +94,7 @@ fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
     let mut valid_paths = vec![];
     for each_path in paths {
         let new_path = Path::new(each_path);
-        if !new_path.exists() {
-            return Err(From::from(format!("path doesn't exist")));
-        }
+        new_path.try_exists()?;
         if new_path.is_file() {
             match new_path.extension() {
                 Some(ext) => {
@@ -118,8 +124,16 @@ fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
     Ok(valid_paths)
 }
 
+fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
+    unimplemented!();
+}
+
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use crate::read_fortunes;
+
     use super::{find_files, parse_seed_num};
 
     #[test]
@@ -180,6 +194,22 @@ mod tests {
         }
         if let Some(filename) = files.last().unwrap().file_name() {
             assert_eq!(filename.to_string_lossy(), "jokes".to_string());
+        }
+    }
+
+    #[test]
+    fn test_read_fortunes() {
+        // One input file
+        let res = read_fortunes(&[PathBuf::from("./tests/inputs/jokes")]);
+        assert!(res.is_ok());
+
+        if let Ok(fortunes) = res {
+            // Correct number and sorting
+            assert_eq!(fortunes.len(), 6);
+            assert_eq!(
+                fortunes.first().unwrap().text,
+                "Q. What do you call a head of lettuce in a shirt and tie?\nA. Collared greens"
+            );
         }
     }
 }
