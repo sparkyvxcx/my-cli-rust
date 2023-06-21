@@ -1,4 +1,6 @@
 use clap::{App, Arg};
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
 use regex::{Regex, RegexBuilder};
 use std::error::Error;
 use std::fs::File;
@@ -79,8 +81,10 @@ pub fn get_args() -> MyResult<Config> {
 
 pub fn run(config: Config) -> MyResult<()> {
     let files = find_files(&config.sources)?;
-    println!("{:#?}", config);
-    println!("{:#?}", files);
+    let fortunes = read_fortunes(&files)?;
+    // println!("{:#?}", config);
+    // println!("{:#?}", files);
+    println!("{:#?}", fortunes.last());
     Ok(())
 }
 
@@ -109,7 +113,7 @@ fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
             let mut entries = vec![];
             for entry in new_path.read_dir()? {
                 if let Ok(entry) = entry {
-                    println!("{:?}", entry.path());
+                    // println!("{:?}", entry.path());
                     entries.push(entry.path().to_str().unwrap().to_string());
                 }
             }
@@ -141,7 +145,7 @@ fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
             .filter(|f| !f.is_empty())
             .for_each(|f| {
                 fortunes.push(Fortune {
-                    source: path.to_string_lossy().to_string(),
+                    source: path.file_name().unwrap().to_string_lossy().to_string(),
                     text: f.to_string(),
                 })
             })
@@ -150,9 +154,27 @@ fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
     Ok(fortunes)
 }
 
+fn pick_fortune(fortunes: &[Fortune], seed: Option<u64>) -> Option<String> {
+    let fortune = match seed {
+        Some(state) => {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(state);
+            fortunes.choose(&mut rng)
+        }
+        None => {
+            let mut rng = rand::thread_rng();
+            fortunes.choose(&mut rng)
+        }
+    };
+    if let Some(f) = fortune {
+        Some(f.text.clone())
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{find_files, parse_seed_num, read_fortunes};
+    use super::{find_files, parse_seed_num, pick_fortune, read_fortunes, Fortune};
     use std::path::PathBuf;
 
     #[test]
@@ -238,5 +260,31 @@ mod tests {
         ]);
         assert!(res.is_ok());
         assert_eq!(res.unwrap().len(), 11);
+    }
+
+    #[test]
+    fn test_pick_fortune() {
+        // Create a slice of fortunes
+        let fortunes = &[
+            Fortune {
+                source: "fortunes".to_string(),
+                text: "You cannot achieve the impossible without attempting the absurd."
+                    .to_string(),
+            },
+            Fortune {
+                source: "fortunes".to_string(),
+                text: "Assumption is the mother of all screw-ups.".to_string(),
+            },
+            Fortune {
+                source: "fortunes".to_string(),
+                text: "Neckties strangle clear thinking.".to_string(),
+            },
+        ];
+
+        // Pick a fortune with a seed
+        assert_eq!(
+            pick_fortune(fortunes, Some(1)).unwrap(),
+            "Neckties strangle clear thinking.".to_string()
+        );
     }
 }
