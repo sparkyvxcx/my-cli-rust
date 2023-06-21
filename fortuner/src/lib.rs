@@ -1,9 +1,9 @@
 use clap::{App, Arg};
 use regex::{Regex, RegexBuilder};
-use std::{
-    error::Error,
-    path::{Path, PathBuf},
-};
+use std::error::Error;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -125,16 +125,35 @@ fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
 }
 
 fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
-    unimplemented!();
+    let mut fortunes = vec![];
+
+    for path in paths {
+        let mut file = BufReader::new(File::open(path)?);
+        let mut buf = String::new();
+        loop {
+            let bytes_read = file.read_line(&mut buf)?;
+            if bytes_read == 0 {
+                break;
+            }
+        }
+        buf.split("%")
+            .map(|f| f.trim())
+            .filter(|f| !f.is_empty())
+            .for_each(|f| {
+                fortunes.push(Fortune {
+                    source: path.to_string_lossy().to_string(),
+                    text: f.to_string(),
+                })
+            })
+    }
+
+    Ok(fortunes)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::{find_files, parse_seed_num, read_fortunes};
     use std::path::PathBuf;
-
-    use crate::read_fortunes;
-
-    use super::{find_files, parse_seed_num};
 
     #[test]
     fn test_parse_seed_num() {
@@ -208,8 +227,16 @@ mod tests {
             assert_eq!(fortunes.len(), 6);
             assert_eq!(
                 fortunes.first().unwrap().text,
-                "Q. What do you call a head of lettuce in a shirt and tie?\nA. Collared greens"
+                "Q. What do you call a head of lettuce in a shirt and tie?\nA. Collared greens."
             );
         }
+
+        // Multiple input files
+        let res = read_fortunes(&[
+            PathBuf::from("./tests/inputs/jokes"),
+            PathBuf::from("./tests/inputs/quotes"),
+        ]);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap().len(), 11);
     }
 }
