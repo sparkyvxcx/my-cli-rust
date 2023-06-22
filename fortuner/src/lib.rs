@@ -6,6 +6,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::{eprintln, println};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -84,7 +85,28 @@ pub fn run(config: Config) -> MyResult<()> {
     let fortunes = read_fortunes(&files)?;
     // println!("{:#?}", config);
     // println!("{:#?}", files);
-    println!("{:#?}", fortunes.last());
+    // println!("{:#?}", fortunes.last());
+    if fortunes.is_empty() {
+        println!("No fortunes found");
+        return Ok(());
+    }
+
+    if let Some(pattern) = config.pattern {
+        let mut sources = vec![];
+        for fortune in fortunes {
+            // Print all the fortunes matching the pattern
+            if pattern.is_match(&fortune.text) {
+                println!("{}\n%", fortune.text);
+                sources.push(format!("({})", fortune.source));
+            }
+        }
+        if !sources.is_empty() {
+            sources.dedup();
+            eprintln!("{}\n%", sources.join("\n%\n"));
+        }
+    } else {
+        println!("{}", pick_fortune(&fortunes, config.seed).unwrap());
+    }
     Ok(())
 }
 
@@ -98,7 +120,10 @@ fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
     let mut valid_paths = vec![];
     for each_path in paths {
         let new_path = Path::new(each_path);
-        new_path.try_exists()?;
+        new_path
+            .metadata()
+            .map_err(|e| format!("{}: {}", new_path.display(), e))?;
+
         if new_path.is_file() {
             match new_path.extension() {
                 Some(ext) => {
@@ -123,7 +148,7 @@ fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
         }
     }
     valid_paths.sort();
-    Vec::dedup(&mut valid_paths);
+    valid_paths.dedup();
 
     Ok(valid_paths)
 }
