@@ -1,12 +1,18 @@
+// #![feature(test)]
+
+// extern crate test;
+
 use clap::{App, Arg};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use regex::{Regex, RegexBuilder};
 use std::error::Error;
-use std::fs::File;
+use std::ffi::OsStr;
+use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::{eprintln, println};
+use walkdir::WalkDir;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -86,10 +92,6 @@ pub fn run(config: Config) -> MyResult<()> {
     // println!("{:#?}", config);
     // println!("{:#?}", files);
     // println!("{:#?}", fortunes.last());
-    if fortunes.is_empty() {
-        println!("No fortunes found");
-        return Ok(());
-    }
 
     if let Some(pattern) = config.pattern {
         let mut sources = vec![];
@@ -105,7 +107,12 @@ pub fn run(config: Config) -> MyResult<()> {
             eprintln!("{}\n%", sources.join("\n%\n"));
         }
     } else {
-        println!("{}", pick_fortune(&fortunes, config.seed).unwrap());
+        println!(
+            "{}",
+            pick_fortune(&fortunes, config.seed)
+                .or_else(|| Some("No fortunes found".to_string()))
+                .unwrap()
+        );
     }
     Ok(())
 }
@@ -153,6 +160,28 @@ fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
     Ok(valid_paths)
 }
 
+fn find_files_plus(paths: &[String]) -> MyResult<Vec<PathBuf>> {
+    let dat = OsStr::new("dat");
+    let mut files = vec![];
+
+    for path in paths {
+        match fs::metadata(path) {
+            Ok(_) => files.extend(
+                WalkDir::new(path)
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .filter(|e| e.file_type().is_file() && e.path().extension() != Some(dat))
+                    .map(|e| e.path().into()),
+            ),
+            Err(e) => return Err(format!("{}: {}", path, e).into()),
+        }
+    }
+
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
 fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
     let mut fortunes = vec![];
 
@@ -179,28 +208,52 @@ fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
     Ok(fortunes)
 }
 
+fn read_fortunes_plus(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
+    let mut fortunes = vec![];
+    let mut buffer = vec![];
+
+    for path in paths {
+        let basename = path.file_name().unwrap().to_string_lossy().into_owned();
+        let file = File::open(path)
+            .map_err(|e| format!("{}: {}", path.to_string_lossy().into_owned(), e))?;
+
+        for line in BufReader::new(file).lines().filter_map(Result::ok) {
+            if line == "%" {
+                if !buffer.is_empty() {
+                    fortunes.push(Fortune {
+                        source: basename.clone(),
+                        text: buffer.join("\n"),
+                    });
+                    buffer.clear();
+                }
+            } else {
+                buffer.push(line.to_string());
+            }
+        }
+    }
+
+    Ok(fortunes)
+}
+
 fn pick_fortune(fortunes: &[Fortune], seed: Option<u64>) -> Option<String> {
-    let fortune = match seed {
+    match seed {
         Some(state) => {
             let mut rng = rand::rngs::StdRng::seed_from_u64(state);
-            fortunes.choose(&mut rng)
+            fortunes.choose(&mut rng).map(|f| f.text.to_string())
         }
         None => {
             let mut rng = rand::thread_rng();
-            fortunes.choose(&mut rng)
+            fortunes.choose(&mut rng).map(|f| f.text.to_string())
         }
-    };
-    if let Some(f) = fortune {
-        Some(f.text.clone())
-    } else {
-        None
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{find_files, parse_seed_num, pick_fortune, read_fortunes, Fortune};
+    use super::{find_files, find_files_plus, parse_seed_num, pick_fortune, Fortune};
+    use super::{read_fortunes, read_fortunes_plus};
     use std::path::PathBuf;
+    // use test::Bencher;
 
     #[test]
     fn test_parse_seed_num() {
@@ -264,6 +317,52 @@ mod tests {
     }
 
     #[test]
+    fn test_find_files_plus() {
+        // Verify that the function finds a file knonw to exist
+        let res = find_files_plus(&["./tests/inputs/jokes".to_string()]);
+        assert!(res.is_ok());
+
+        let files = res.unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(
+            files.get(0).unwrap().to_string_lossy(),
+            "./tests/inputs/jokes"
+        );
+
+        // Fails to find a bad file
+        let res = find_files_plus(&["/path/does/not/exist".to_string()]);
+        assert!(res.is_err());
+
+        // Finds all the input files, excludes ".dat"
+        let res = find_files_plus(&["./tests/inputs".to_string()]);
+        assert!(res.is_ok());
+
+        // Check number and order of files
+        let files = res.unwrap();
+        assert_eq!(files.len(), 5);
+        let first = files.get(0).unwrap().display().to_string();
+        assert!(first.contains("ascii-art"));
+        let last = files.last().unwrap().display().to_string();
+        assert!(last.contains("quotes"));
+
+        // Test for multiple sources, path must be unique and sorted
+        let res = find_files_plus(&[
+            "./tests/inputs/jokes".to_string(),
+            "./tests/inputs/ascii-art".to_string(),
+            "./tests/inputs/jokes".to_string(),
+        ]);
+        assert!(res.is_ok());
+        let files = res.unwrap();
+        assert_eq!(files.len(), 2);
+        if let Some(filename) = files.first().unwrap().file_name() {
+            assert_eq!(filename.to_string_lossy(), "ascii-art".to_string());
+        }
+        if let Some(filename) = files.last().unwrap().file_name() {
+            assert_eq!(filename.to_string_lossy(), "jokes".to_string());
+        }
+    }
+
+    #[test]
     fn test_read_fortunes() {
         // One input file
         let res = read_fortunes(&[PathBuf::from("./tests/inputs/jokes")]);
@@ -280,6 +379,30 @@ mod tests {
 
         // Multiple input files
         let res = read_fortunes(&[
+            PathBuf::from("./tests/inputs/jokes"),
+            PathBuf::from("./tests/inputs/quotes"),
+        ]);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap().len(), 11);
+    }
+
+    #[test]
+    fn test_read_fortunes_plus() {
+        // One input file
+        let res = read_fortunes_plus(&[PathBuf::from("./tests/inputs/jokes")]);
+        assert!(res.is_ok());
+
+        if let Ok(fortunes) = res {
+            // Correct number and sorting
+            assert_eq!(fortunes.len(), 6);
+            assert_eq!(
+                fortunes.first().unwrap().text,
+                "Q. What do you call a head of lettuce in a shirt and tie?\nA. Collared greens."
+            );
+        }
+
+        // Multiple input files
+        let res = read_fortunes_plus(&[
             PathBuf::from("./tests/inputs/jokes"),
             PathBuf::from("./tests/inputs/quotes"),
         ]);
@@ -312,4 +435,36 @@ mod tests {
             "Neckties strangle clear thinking.".to_string()
         );
     }
+
+    /*
+    #[bench]
+    fn bench_find_files(b: &mut Bencher) {
+        b.iter(|| find_files(&["./tests/inputs/jokes".to_string()]))
+    }
+
+    #[bench]
+    fn bench_find_files_plus(b: &mut Bencher) {
+        b.iter(|| find_files_plus(&["./tests/inputs/jokes".to_string()]))
+    }
+
+    #[bench]
+    fn bench_read_fortunes(b: &mut Bencher) {
+        b.iter(|| {
+            read_fortunes(&[
+                PathBuf::from("./tests/inputs/jokes"),
+                PathBuf::from("./tests/inputs/quotes"),
+            ])
+        })
+    }
+
+    #[bench]
+    fn bench_read_fortunes_plus(b: &mut Bencher) {
+        b.iter(|| {
+            read_fortunes_plus(&[
+                PathBuf::from("./tests/inputs/jokes"),
+                PathBuf::from("./tests/inputs/quotes"),
+            ])
+        })
+    }
+    */
 }
