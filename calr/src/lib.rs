@@ -1,4 +1,4 @@
-use chrono::{Datelike, Local, NaiveDate};
+use chrono::{Datelike, Local, Month, NaiveDate};
 use clap::{App, Arg};
 use std::error::Error;
 use std::str::FromStr;
@@ -19,45 +19,44 @@ pub fn get_args() -> MyResult<Config> {
         .author("Ken Youens-Clark <kyclark@gmail.com>")
         .about("Rusty cal")
         .arg(
-            Arg::with_name("whole_year")
-                .help("Show whole current year")
-                .short("y")
-                .long("year")
-                .takes_value(false)
-                .conflicts_with_all(&["month", "year"]),
-        )
-        .arg(
             Arg::with_name("month")
-                .help("Month name or number (1-12)")
                 .value_name("MONTH")
                 .short("m")
+                .help("Month name or number (1-12)")
+                .takes_value(true)
                 .required(false),
         )
         .arg(
+            Arg::with_name("show_current_year")
+                .short("y")
+                .long("year")
+                .help("Show whole current year")
+                .conflicts_with_all(&["month", "year"])
+                .takes_value(false),
+        )
+        .arg(
             Arg::with_name("year")
-                .help("Year (1-9999)")
                 .value_name("YEAR")
-                .takes_value(true)
-                .conflicts_with("month"),
+                .help("Year (1-9999)")
+                .conflicts_with("month")
+                .takes_value(true),
         )
         .get_matches();
 
-    let mut month = matches
-        .value_of("month")
-        .map(|m| m.parse::<u32>())
-        .transpose()?;
-    let whole_year = matches.is_present("whole_year");
     let today = Local::today();
 
+    let mut month = matches.value_of("month").map(parse_month).transpose()?;
     let mut year = matches
         .value_of("year")
-        .map(|y| y.parse::<i32>())
+        .map(parse_year)
         .transpose()?
         .unwrap_or(today.year());
 
-    if whole_year {
+    if matches.is_present("show_current_year") {
         month = None;
         year = today.year();
+    } else if month.is_none() {
+        month = Some(today.month())
     }
 
     Ok(Config {
@@ -72,28 +71,24 @@ pub fn run(config: Config) -> MyResult<()> {
     Ok(())
 }
 
+fn format_month(year: i32, month: u32, print_year: bool, today: NaiveDate) -> Vec<String> {
+    unimplemented!();
+}
+
 fn parse_int<T: FromStr>(val: &str) -> MyResult<T> {
-    val.parse::<T>()
+    val.parse()
         .map_err(|_| From::from(format!("Invalid integer \"{}\"", val)))
 }
 
 fn parse_year(year: &str) -> MyResult<i32> {
-    match parse_int(year) {
-        Ok(year) => {
-            if year < 1 || year > 9999 {
-                return Err(From::from(format!(
-                    "year \"{}\" not in the range 1 through 9999",
-                    year
-                )));
-            } else {
-                Ok(year)
-            }
+    parse_int(year).and_then(|num| {
+        if (1..=9999).contains(&num) {
+            Ok(num)
+        } else {
+            Err(format!("year \"{}\" not in the range 1 through 9999", year).into())
         }
-        Err(e) => Err(e),
-    }
+    })
 }
-
-use chrono::Month;
 
 fn parse_month(month: &str) -> MyResult<u32> {
     match parse_int(month) {
@@ -108,9 +103,9 @@ fn parse_month(month: &str) -> MyResult<u32> {
             }
         }
         Err(_) => {
-            let month = month.parse::<Month>().map_err(|_| -> Box<dyn Error> {
-                From::from(format!("Invalid month \"{}\"", month))
-            })?;
+            let month = month
+                .parse::<Month>()
+                .map_err(|_| -> Box<dyn Error> { format!("Invalid month \"{}\"", month).into() })?;
 
             Ok(month.number_from_month())
         }
@@ -119,7 +114,10 @@ fn parse_month(month: &str) -> MyResult<u32> {
 
 #[cfg(test)]
 mod tests {
+    use crate::format_month;
+
     use super::{parse_int, parse_month, parse_year};
+    use chrono::NaiveDate;
 
     #[test]
     fn test_parse_int() {
@@ -198,5 +196,46 @@ mod tests {
         let res = parse_month("foo");
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "Invalid month \"foo\"");
+    }
+
+    #[test]
+    fn test_format_month() {
+        let today = NaiveDate::from_ymd(0, 1, 1);
+        let leap_february = vec![
+            "   February 2020      ",
+            "Su Mo Tu We Th Fr Sa  ",
+            "                   1  ",
+            " 2  3  4  5  6  7  8  ",
+            " 9 10 11 12 13 14 15  ",
+            "16 17 18 19 20 21 22  ",
+            "23 24 25 26 27 28 29  ",
+            "                      ",
+        ];
+        assert_eq!(format_month(2020, 2, true, today), leap_february);
+
+        let may = vec![
+            " May ",
+            "Su Mo Tu We Th Fr Sa ",
+            "                1  2 ",
+            " 3  4  5  6  7  8  9 ",
+            "10 11 12 13 14 15 16 ",
+            "17 18 19 20 21 22 23 ",
+            "24 25 26 27 28 29 30 ",
+            "31 ",
+        ];
+        assert_eq!(format_month(2020, 5, false, today), may);
+
+        let april_hl = vec![
+            " April 2021 ",
+            "Su Mo Tu We Th Fr Sa ",
+            " 1 2 3 ",
+            " 4 5 6 \u{1b}[7m 7\u{1b}[0m 8 9 10 ",
+            "11 12 13 14 15 16 17 ",
+            "18 19 20 21 22 23 24 ",
+            "25 26 27 28 29 30 ",
+            " ",
+        ];
+        let today = NaiveDate::from_ymd(2021, 4, 7);
+        assert_eq!(format_month(2021, 4, true, today), april_hl);
     }
 }
