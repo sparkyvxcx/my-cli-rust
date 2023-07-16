@@ -13,6 +13,7 @@ pub struct Config {
     month: Option<u32>,
     year: i32,
     today: NaiveDate,
+    ncal: bool,
 }
 
 const MONTH_NAMES: [&str; 12] = [
@@ -58,8 +59,16 @@ pub fn get_args() -> MyResult<Config> {
                 .help("Year (1-9999)")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("ncal")
+                .short("n")
+                .long("ncal")
+                .help("Print ncal like output")
+                .takes_value(false),
+        )
         .get_matches();
 
+    let ncal = matches.is_present("ncal");
     let today = Local::today();
 
     let mut month = matches.value_of("month").map(parse_month).transpose()?;
@@ -77,6 +86,7 @@ pub fn get_args() -> MyResult<Config> {
         month,
         year: year.unwrap_or_else(|| today.year()),
         today: today.naive_local(),
+        ncal,
     })
 }
 
@@ -93,14 +103,28 @@ pub fn run(config: Config) -> MyResult<()> {
                 .into_iter()
                 .map(|month| format_month(config.year, month, false, config.today))
                 .collect();
-            for (index, chunk) in months.chunks(3).enumerate() {
-                if let [m1, m2, m3] = chunk {
-                    for lines in izip!(m1, m2, m3) {
-                        println!("{}{}{}", lines.0, lines.1, lines.2);
+            if config.ncal {
+                for (index, chunk) in months.chunks(4).enumerate() {
+                    if let [m1, m2, m3, m4] = chunk {
+                        for lines in izip!(m1, m2, m3, m4) {
+                            println!("{}{}{}{}", lines.0, lines.1, lines.2, lines.3);
+                        }
+                        // print the next row of months
+                        if index < 4 {
+                            println!();
+                        }
                     }
-                    // print the next row of months
-                    if index < 3 {
-                        println!();
+                }
+            } else {
+                for (index, chunk) in months.chunks(3).enumerate() {
+                    if let [m1, m2, m3] = chunk {
+                        for lines in izip!(m1, m2, m3) {
+                            println!("{}{}{}", lines.0, lines.1, lines.2);
+                        }
+                        // print the next row of months
+                        if index < 3 {
+                            println!();
+                        }
                     }
                 }
             }
@@ -109,7 +133,8 @@ pub fn run(config: Config) -> MyResult<()> {
     Ok(())
 }
 
-fn format_month_mine(year: i32, month: u32, print_year: bool, today: NaiveDate) -> Vec<String> {
+#[allow(dead_code)]
+fn format_month_mine(year: i32, month: u32, print_year: bool, _today: NaiveDate) -> Vec<String> {
     let mut month_vec = vec![];
     let line2 = "Su Mo Tu We Th Fr Sa ";
     let line1 = if print_year {
