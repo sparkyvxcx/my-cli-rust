@@ -1,6 +1,10 @@
+mod owner;
+
 use chrono::{DateTime, Local};
 use clap::{App, Arg};
+use owner::Owner;
 use std::error::Error;
+use std::fs;
 use std::os::unix::prelude::MetadataExt;
 use std::path::{Path, PathBuf};
 use tabular::{Row, Table};
@@ -63,23 +67,46 @@ pub fn run(config: Config) -> MyReuslt<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
+fn find_files_og(paths: &[String], show_hidden: bool) -> MyReuslt<Vec<PathBuf>> {
+    let mut results = vec![];
+
+    for name in paths {
+        match fs::metadata(name) {
+            Ok(file_metadata) => {
+                if file_metadata.is_dir() {
+                    results.extend(
+                        fs::read_dir(name)?
+                            .into_iter()
+                            .filter_map(Result::ok)
+                            .filter(|e| {
+                                show_hidden || !e.file_name().to_str().unwrap().starts_with(".")
+                            })
+                            .map(|e| e.path().into()),
+                    );
+                } else {
+                    results.push(PathBuf::from(name));
+                }
+            }
+            Err(e) => eprintln!("{}: {}", name, e),
+        }
+    }
+
+    Ok(results)
+}
+
 fn find_files(paths: &[String], show_hidden: bool) -> MyReuslt<Vec<PathBuf>> {
     let mut valid_paths = vec![];
     for each_path in paths {
         let path = Path::new(each_path);
-        path.metadata()
-            .map_err(|e| format!("{}: {}", path.display(), e))?;
+        if let Err(e) = path.metadata() {
+            eprintln!("{}: {}", path.display(), e);
+            continue;
+        }
 
         if path.is_file() {
             valid_paths.push(path.to_owned());
         } else {
-            // let mut entries = vec![];
-            // for entry in new_path.read_dir()? {
-            //     if let Ok(entry) = entry {
-            //         // println!("{:?}", entry.path());
-            //         valid_paths.push(entry.path());
-            //     }
-            // }
             valid_paths.extend(
                 path.read_dir()?
                     .into_iter()
@@ -102,19 +129,11 @@ fn format_output(paths: &[PathBuf]) -> MyReuslt<String> {
 
     for path in paths {
         let path_metadata = path.metadata()?;
-        let position_1 = format!(
-            "{}{}",
-            if path_metadata.is_dir() { "d" } else { "-" },
-            format_mode(path_metadata.mode())
-        );
-        let path_usr = format!(
-            "{}",
-            users::get_user_by_uid(path_metadata.uid())
-                .unwrap()
-                .name()
-                .to_str()
-                .unwrap()
-        );
+        let file_type = format!("{}", if path_metadata.is_dir() { "d" } else { "-" },);
+        let uid = path_metadata.uid();
+        let path_usr = users::get_user_by_uid(uid)
+            .map(|u| u.name().to_string_lossy().into_owned())
+            .unwrap_or_else(|| uid.to_string());
         let length = path_metadata.len();
         let path_grp = format!(
             "{}",
@@ -124,12 +143,13 @@ fn format_output(paths: &[PathBuf]) -> MyReuslt<String> {
                 .to_str()
                 .unwrap()
         );
+        let perms = format_mode(path_metadata.mode());
         let modified_time: DateTime<Local> = DateTime::from(path_metadata.modified()?);
 
         table.add_row(
             Row::new()
-                .with_cell(position_1)
-                .with_cell("")
+                .with_cell(file_type)
+                .with_cell(perms)
                 .with_cell(path_metadata.nlink())
                 .with_cell(path_usr)
                 .with_cell(path_grp)
@@ -174,13 +194,34 @@ fn format_mode(mode: u32) -> String {
     perms
 }
 
+#[allow(dead_code)]
+fn formate_mode_og(mode: u32) -> String {
+    format!(
+        "{}{}{}",
+        mk_triple(mode, Owner::User),
+        mk_triple(mode, Owner::Group),
+        mk_triple(mode, Owner::Other),
+    )
+}
+
+/// Given a file mode in octal formate like 0o751,
+/// return a string like "rwxr-x--x"
+pub fn mk_triple(mode: u32, owner: Owner) -> String {
+    let [read, write, execute] = owner.masks();
+    format!(
+        "{}{}{}",
+        if mode & read == 0 { "-" } else { "r" },
+        if mode & write == 0 { "-" } else { "w" },
+        if mode & execute == 0 { "-" } else { "x" },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use crate::format_output;
-
-    use super::{find_files, format_mode};
+    use super::Owner;
+    use super::{find_files, format_mode, format_output, mk_triple};
 
     fn long_match(
         line: &str,
@@ -346,5 +387,15 @@ mod tests {
 
         let dir_line = lines.remove(0);
         long_match(&dir_line, "tests/inputs/dir", "drwxr-xr-x", None)
+    }
+
+    #[test]
+    fn test_mk_triple() {
+        assert_eq!(mk_triple(0o751, Owner::User), "rwx");
+        assert_eq!(mk_triple(0o751, Owner::Group), "r-x");
+        assert_eq!(mk_triple(0o751, Owner::Other), "--x");
+        assert_eq!(mk_triple(0o600, Owner::User), "rw-");
+        assert_eq!(mk_triple(0o600, Owner::Group), "---");
+        assert_eq!(mk_triple(0o600, Owner::Other), "---");
     }
 }

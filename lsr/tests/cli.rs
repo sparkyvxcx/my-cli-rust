@@ -30,8 +30,7 @@ fn gen_bad_file() -> String {
 #[test]
 fn bad_file() -> TestResult {
     let bad = gen_bad_file();
-    let expected =
-        format!("{}: No such file or directory (os error 2)", &bad);
+    let expected = format!("{}: No such file or directory (os error 2)", &bad);
     Command::cargo_bin(PRG)?
         .arg(&bad)
         .assert()
@@ -123,8 +122,7 @@ fn hidden_long() -> TestResult {
 fn dir_short(args: &[&str], expected: &[&str]) -> TestResult {
     let cmd = Command::cargo_bin(PRG)?.args(args).assert().success();
     let stdout = String::from_utf8(cmd.get_output().stdout.clone())?;
-    let lines: Vec<&str> =
-        stdout.split("\n").filter(|s| !s.is_empty()).collect();
+    let lines: Vec<&str> = stdout.split("\n").filter(|s| !s.is_empty()).collect();
     assert_eq!(lines.len(), expected.len());
     for filename in expected {
         assert!(lines.contains(&filename));
@@ -176,8 +174,7 @@ fn dir2_all() -> TestResult {
 fn dir_long(args: &[&str], expected: &[(&str, &str, &str)]) -> TestResult {
     let cmd = Command::cargo_bin(PRG)?.args(args).assert().success();
     let stdout = String::from_utf8(cmd.get_output().stdout.clone())?;
-    let lines: Vec<&str> =
-        stdout.split("\n").filter(|s| !s.is_empty()).collect();
+    let lines: Vec<&str> = stdout.split("\n").filter(|s| !s.is_empty()).collect();
     assert_eq!(lines.len(), expected.len());
 
     let mut check = vec![];
