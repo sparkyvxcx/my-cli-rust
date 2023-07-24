@@ -146,39 +146,62 @@ fn format_output(paths: &[PathBuf]) -> MyReuslt<String> {
 /// return a string like "rwxr-x--x"
 fn format_mode(mode: u32) -> String {
     let mode_map = [0o400, 0o040, 0o004];
-    let mut perm = String::new();
+    let mut perms = String::new();
 
     for each_mask in mode_map {
         // check read permission
         if mode & each_mask == each_mask {
-            perm.push('r')
+            perms.push('r')
         } else {
-            perm.push('-')
+            perms.push('-')
         }
 
         // check write permission
         if mode & each_mask >> 1 == each_mask >> 1 {
-            perm.push('w')
+            perms.push('w')
         } else {
-            perm.push('-')
+            perms.push('-')
         }
 
         // check execute permission
         if mode & each_mask >> 2 == each_mask >> 2 {
-            perm.push('x')
+            perms.push('x')
         } else {
-            perm.push('-')
+            perms.push('-')
         }
     }
 
-    perm
+    perms
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::format_mode;
+    use std::path::PathBuf;
 
-    use super::find_files;
+    use crate::format_output;
+
+    use super::{find_files, format_mode};
+
+    fn long_match(
+        line: &str,
+        expected_name: &str,
+        expected_perms: &str,
+        expected_size: Option<&str>,
+    ) {
+        let parts: Vec<_> = line.split_whitespace().collect();
+        assert!(parts.len() > 0 && parts.len() <= 10);
+
+        let perms = parts.get(0).unwrap();
+        assert_eq!(perms, &expected_perms);
+
+        if let Some(size) = expected_size {
+            let file_size = parts.get(4).unwrap();
+            assert_eq!(file_size, &size);
+        }
+
+        let display_name = parts.last().unwrap();
+        assert_eq!(display_name, &expected_name);
+    }
 
     #[test]
     fn test_find_files() {
@@ -282,5 +305,46 @@ mod tests {
     fn test_format_mode() {
         assert_eq!(format_mode(0o755), "rwxr-xr-x");
         assert_eq!(format_mode(0o421), "r---w---x");
+    }
+
+    #[test]
+    fn test_format_output_one() {
+        let bustle_path = "tests/inputs/bustle.txt";
+        let bustle = PathBuf::from(bustle_path);
+
+        let res = format_output(&[bustle]);
+        assert!(res.is_ok());
+
+        let out = res.unwrap();
+        let lines: Vec<&str> = out.split("\n").filter(|s| !s.is_empty()).collect();
+        assert_eq!(lines.len(), 1);
+
+        let line1 = lines.first().unwrap();
+        long_match(&line1, bustle_path, "-rw-r--r--", Some("193"));
+    }
+
+    #[test]
+    fn test_format_output_two() {
+        let res = format_output(&[
+            PathBuf::from("tests/inputs/dir"),
+            PathBuf::from("tests/inputs/empty.txt"),
+        ]);
+        assert!(res.is_ok());
+
+        let out = res.unwrap();
+        let mut lines: Vec<&str> = out.split("\n").filter(|s| !s.is_empty()).collect();
+        lines.sort();
+        assert_eq!(lines.len(), 2);
+
+        let empty_lines = lines.remove(0);
+        long_match(
+            &empty_lines,
+            "tests/inputs/empty.txt",
+            "-rw-r--r--",
+            Some("0"),
+        );
+
+        let dir_line = lines.remove(0);
+        long_match(&dir_line, "tests/inputs/dir", "drwxr-xr-x", None)
     }
 }
