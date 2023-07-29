@@ -135,14 +135,10 @@ fn format_output(paths: &[PathBuf]) -> MyReuslt<String> {
             .map(|u| u.name().to_string_lossy().into_owned())
             .unwrap_or_else(|| uid.to_string());
         let length = path_metadata.len();
-        let path_grp = format!(
-            "{}",
-            users::get_group_by_gid(path_metadata.gid())
-                .unwrap()
-                .name()
-                .to_str()
-                .unwrap()
-        );
+        let gid = path_metadata.gid();
+        let path_grp = users::get_group_by_gid(gid)
+            .map(|g| g.name().to_string_lossy().into_owned())
+            .unwrap_or_else(|| gid.to_string());
         let perms = format_mode(path_metadata.mode());
         let modified_time: DateTime<Local> = DateTime::from(path_metadata.modified()?);
 
